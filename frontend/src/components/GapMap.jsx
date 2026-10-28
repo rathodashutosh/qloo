@@ -3,7 +3,8 @@ import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { BASEMAPS, DEFAULT_BASEMAP, CITIES } from '../utils/constants';
 import { gapFillColorExpression } from '../utils/colors';
-import { Layers } from 'lucide-react';
+import { fetchGeeTileUrl } from '../api/client';
+import { Layers, Satellite, Sparkles, Settings } from 'lucide-react';
 
 const SOURCE_ID = 'hex-cells';
 const FILL_LAYER = 'cells-fill';
@@ -17,6 +18,7 @@ const LIVE_POINT_PULSE = 'live-point-pulse';
 /**
  * GapMap — interactive MapLibre map with:
  * - 100% free, unwatermarked basemaps (ESRI World Street, ESRI Light, OpenStreetMap)
+ * - Google Earth Engine remote sensing layers (Copernicus Sentinel-1 SAR, VIIRS Night Lights)
  * - Semi-transparent opportunity hexagons showing street-level details
  * - Click and hover handlers
  * - Layer switcher
@@ -29,12 +31,16 @@ export default function GapMap({
   livePoint,
   onCellClick,
   onLivePointClick,
+  onOpenGeeModal,
+  currentBasemap,
+  onBasemapChange,
 }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
   const popupRef = useRef(null);
-  const [activeBasemap, setActiveBasemap] = useState(DEFAULT_BASEMAP);
+  const [activeBasemap, setActiveBasemap] = useState(currentBasemap || DEFAULT_BASEMAP);
   const [showBasemapPicker, setShowBasemapPicker] = useState(false);
+  const [geeLiveStatus, setGeeLiveStatus] = useState(null);
 
   // Setup all GeoJSON sources and layers
   const setupDataLayers = useCallback((map, data) => {
@@ -256,20 +262,63 @@ export default function GapMap({
     };
   }, []);
 
-  // Change basemap style
-  const handleBasemapChange = (key) => {
+  // Sync external basemap change
+  useEffect(() => {
+    if (currentBasemap && currentBasemap !== activeBasemap) {
+      handleBasemapChange(currentBasemap);
+    }
+  }, [currentBasemap]);
+
+  // Change basemap style (with dynamic GEE tile support)
+  const handleBasemapChange = async (key) => {
     setActiveBasemap(key);
+    onBasemapChange?.(key);
     setShowBasemapPicker(false);
     const map = mapRef.current;
     if (!map) return;
 
     const basemapConfig = BASEMAPS[key];
-    if (basemapConfig) {
-      map.setStyle(basemapConfig.style);
-      map.once('style.load', () => {
-        setupDataLayers(map, geojson);
-      });
+    if (!basemapConfig) return;
+
+    if (basemapConfig.isGee) {
+      try {
+        const geeData = await fetchGeeTileUrl(basemapConfig.geeLayer);
+        setGeeLiveStatus(geeData);
+        const dynamicStyle = {
+          version: 8,
+          sources: {
+            'gee-raster': {
+              type: 'raster',
+              tiles: [geeData.tile_url],
+              tileSize: 256,
+              attribution: geeData.attribution || 'Google Earth Engine',
+            },
+          },
+          layers: [
+            {
+              id: 'gee-raster-layer',
+              type: 'raster',
+              source: 'gee-raster',
+              minzoom: 0,
+              maxzoom: 19,
+            },
+          ],
+        };
+        map.setStyle(dynamicStyle);
+        map.once('style.load', () => {
+          setupDataLayers(map, geojson);
+        });
+        return;
+      } catch (err) {
+        console.warn('Could not fetch GEE tile URL, using fallback style', err);
+      }
     }
+
+    setGeeLiveStatus(null);
+    map.setStyle(basemapConfig.style);
+    map.once('style.load', () => {
+      setupDataLayers(map, geojson);
+    });
   };
 
   // Fly to city when changed
@@ -404,36 +453,85 @@ export default function GapMap({
         className="absolute inset-0 w-full h-full"
       />
 
-      {/* Basemap Switcher Button (bottom-left) */}
-      <div className="absolute bottom-6 left-4 z-10">
+      {/* Basemap Switcher & GEE Remote Sensing Controls (bottom-left) */}
+      <div className="absolute bottom-6 left-4 z-10 flex items-center gap-2">
         <div className="relative">
           <button
             onClick={() => setShowBasemapPicker(!showBasemapPicker)}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-white/95 backdrop-blur-md rounded-lg shadow-md border border-slate-200 text-xs font-medium text-slate-700 hover:bg-white transition-all cursor-pointer"
           >
             <Layers className="h-3.5 w-3.5 text-indigo-600" />
-            <span>Map Style</span>
+            <span>Map Layers</span>
           </button>
 
           {showBasemapPicker && (
-            <div className="absolute bottom-10 left-0 bg-white rounded-xl shadow-xl border border-slate-200 p-2 w-56 space-y-1">
-              <p className="text-[10px] font-bold text-slate-400 uppercase px-2 py-1">Select Free Basemap</p>
+            <div className="absolute bottom-10 left-0 bg-white rounded-xl shadow-2xl border border-slate-200 p-2 w-72 space-y-1.5">
+              <div className="flex items-center justify-between px-2 py-1 border-b border-slate-100 pb-1.5">
+                <p className="text-[10px] font-bold text-slate-400 uppercase">Basemaps & Earth Engine</p>
+                <button
+                  onClick={() => {
+                    setShowBasemapPicker(false);
+                    onOpenGeeModal?.();
+                  }}
+                  className="text-[10px] font-semibold text-sky-600 hover:text-sky-700 flex items-center gap-0.5 cursor-pointer"
+                >
+                  <Satellite className="h-3 w-3" />
+                  GEE Settings
+                </button>
+              </div>
+
               {Object.values(BASEMAPS).map((b) => (
                 <button
                   key={b.id}
                   onClick={() => handleBasemapChange(b.id)}
-                  className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+                  className={`w-full text-left px-2.5 py-2 rounded-lg text-xs transition-colors cursor-pointer flex flex-col gap-0.5 ${
                     activeBasemap === b.id
-                      ? 'bg-indigo-50 text-indigo-700 font-semibold'
-                      : 'text-slate-600 hover:bg-slate-50'
+                      ? 'bg-indigo-50 text-indigo-900 font-semibold border border-indigo-200'
+                      : 'text-slate-700 hover:bg-slate-50 border border-transparent'
                   }`}
                 >
-                  {b.name}
+                  <div className="flex items-center justify-between w-full">
+                    <span className="truncate">{b.name}</span>
+                    {b.badge && (
+                      <span className={`text-[9px] px-1.5 py-0.2 rounded font-medium ${
+                        b.isGee
+                          ? 'bg-sky-100 text-sky-800'
+                          : 'bg-emerald-100 text-emerald-800'
+                      }`}>
+                        {b.badge}
+                      </span>
+                    )}
+                  </div>
+                  {b.description && (
+                    <span className="text-[10px] text-slate-400 font-normal line-clamp-1">
+                      {b.description}
+                    </span>
+                  )}
                 </button>
               ))}
             </div>
           )}
         </div>
+
+        {/* Quick GEE Earth Engine Modal Button */}
+        <button
+          onClick={onOpenGeeModal}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900/90 text-white backdrop-blur-md rounded-lg shadow-md border border-slate-700 hover:bg-slate-800 text-xs font-medium transition-all cursor-pointer"
+        >
+          <Satellite className="h-3.5 w-3.5 text-sky-400" />
+          <span>Google Earth Engine</span>
+          {activeBasemap.startsWith('gee') && (
+            <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+          )}
+        </button>
+
+        {/* Active Layer Pill if Sentinel-1 or Satellite */}
+        {geeLiveStatus && (
+          <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 bg-white/90 backdrop-blur-md rounded-lg shadow-xs border border-slate-200 text-[11px] text-slate-600">
+            <span className="h-1.5 w-1.5 rounded-full bg-sky-500" />
+            <span>{geeLiveStatus.name || 'Earth Engine Tile Layer'}</span>
+          </div>
+        )}
       </div>
     </div>
   );

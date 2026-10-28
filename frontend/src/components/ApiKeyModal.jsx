@@ -5,6 +5,7 @@ import { Key, Upload, CheckCircle2, AlertCircle, X, Shield, RefreshCw } from 'lu
 export default function ApiKeyModal({ isOpen, onClose, onKeysUpdated }) {
   const [qlooKey, setQlooKey] = useState('');
   const [openaiKey, setOpenaiKey] = useState('');
+  const [eeProject, setEeProject] = useState('');
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState(null);
   const [resultMessage, setResultMessage] = useState(null);
@@ -13,7 +14,10 @@ export default function ApiKeyModal({ isOpen, onClose, onKeysUpdated }) {
   useEffect(() => {
     if (isOpen) {
       fetchKeyStatus()
-        .then((data) => setStatus(data))
+        .then((data) => {
+          setStatus(data);
+          if (data.ee_project) setEeProject(data.ee_project);
+        })
         .catch(console.error);
     }
   }, [isOpen]);
@@ -22,7 +26,7 @@ export default function ApiKeyModal({ isOpen, onClose, onKeysUpdated }) {
 
   const handleSave = async (e) => {
     e.preventDefault();
-    if (!qlooKey.trim() && !openaiKey.trim()) return;
+    if (!qlooKey.trim() && !openaiKey.trim() && !eeProject.trim()) return;
 
     setLoading(true);
     setResultMessage(null);
@@ -32,6 +36,7 @@ export default function ApiKeyModal({ isOpen, onClose, onKeysUpdated }) {
       const res = await updateApiKeys({
         qlooApiKey: qlooKey.trim() || undefined,
         openaiApiKey: openaiKey.trim() || undefined,
+        eeProjectId: eeProject.trim() || undefined,
       });
 
       setIsSuccess(res.qloo_valid !== false);
@@ -150,6 +155,22 @@ export default function ApiKeyModal({ isOpen, onClose, onKeysUpdated }) {
               />
               <p className="text-[10px] text-slate-400 mt-1">
                 If omitted, the app uses its built-in analytical brief generator.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Google Earth Engine / Cloud Project ID <span className="text-slate-400 font-normal">(Optional)</span>
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. your-gcp-project-id"
+                value={eeProject}
+                onChange={(e) => setEeProject(e.target.value)}
+                className="w-full text-xs px-3 py-2.5 rounded-lg border border-slate-300 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono"
+              />
+              <p className="text-[10px] text-slate-400 mt-1">
+                Enables live Copernicus Sentinel-1 SAR and Sentinel-2 satellite observation layers.
               </p>
             </div>
 

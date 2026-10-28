@@ -136,6 +136,93 @@ export const BASEMAPS = {
       ],
     },
   },
+  satellite: {
+    id: 'satellite',
+    name: 'Earth Satellite Imagery (High-Res)',
+    badge: 'Earth Observation',
+    style: {
+      version: 8,
+      sources: {
+        'esri-satellite': {
+          type: 'raster',
+          tiles: [
+            'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+          ],
+          tileSize: 256,
+          attribution: '&copy; Esri, Maxar, Earthstar Geographics, CNES/Airbus DS, USDA, USGS',
+        },
+      },
+      layers: [
+        {
+          id: 'esri-satellite-layer',
+          type: 'raster',
+          source: 'esri-satellite',
+          minzoom: 0,
+          maxzoom: 19,
+        },
+      ],
+    },
+  },
+  geeSentinel1: {
+    id: 'geeSentinel1',
+    name: 'Copernicus Sentinel-1 SAR (Radar)',
+    badge: 'Google Earth Engine',
+    isGee: true,
+    geeLayer: 'sentinel1',
+    description: 'COPERNICUS/S1_GRD radar penetrating weather and clouds; bright backscatter highlights dense commercial built infrastructure.',
+    style: {
+      version: 8,
+      sources: {
+        'gee-s1': {
+          type: 'raster',
+          tiles: [
+            'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+          ],
+          tileSize: 256,
+          attribution: 'Google Earth Engine | COPERNICUS/S1_GRD',
+        },
+      },
+      layers: [
+        {
+          id: 'gee-s1-layer',
+          type: 'raster',
+          source: 'gee-s1',
+          minzoom: 0,
+          maxzoom: 19,
+        },
+      ],
+    },
+  },
+  geeNightLights: {
+    id: 'geeNightLights',
+    name: 'Earth at Night (VIIRS Nighttime Lights)',
+    badge: 'Google Earth Engine',
+    isGee: true,
+    geeLayer: 'nightlights',
+    description: 'NOAA/VIIRS monthly radiance proxy for foot traffic, nightlife vitality, and retail clusters.',
+    style: {
+      version: 8,
+      sources: {
+        'gee-viirs': {
+          type: 'raster',
+          tiles: [
+            'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+          ],
+          tileSize: 256,
+          attribution: 'Google Earth Engine | NOAA/VIIRS Nighttime Lights',
+        },
+      },
+      layers: [
+        {
+          id: 'gee-viirs-layer',
+          type: 'raster',
+          source: 'gee-viirs',
+          minzoom: 0,
+          maxzoom: 19,
+        },
+      ],
+    },
+  },
 };
 
 export const DEFAULT_BASEMAP = 'esriStreet';

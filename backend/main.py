@@ -17,6 +17,7 @@ from routers.cell import router as cell_router
 from routers.report import router as report_router
 from routers.live_query import router as live_query_router
 from routers.settings import router as settings_router
+from routers.gee import router as gee_router
 
 # Configure logging
 logging.basicConfig(
@@ -162,6 +163,7 @@ app.include_router(cell_router, prefix="/api", tags=["cell"])
 app.include_router(report_router, prefix="/api", tags=["report"])
 app.include_router(live_query_router, prefix="/api", tags=["live-query"])
 app.include_router(settings_router, prefix="/api", tags=["settings"])
+app.include_router(gee_router, prefix="/api", tags=["gee"])
 
 
 # ── Health check ─────────────────────────────────────────────────────────────

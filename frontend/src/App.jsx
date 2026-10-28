@@ -8,6 +8,7 @@ import LivePointDetail from './components/LivePointDetail';
 import ChatBox from './components/ChatBox';
 import Legend from './components/Legend';
 import ApiKeyModal from './components/ApiKeyModal';
+import GeeModal from './components/GeeModal';
 import useMapData from './hooks/useMapData';
 import useCellDetail from './hooks/useCellDetail';
 import { fetchKeyStatus, liveQuery } from './api/client';
@@ -22,7 +23,8 @@ import {
   AlertCircle,
   TrendingUp,
   Target,
-  RefreshCw
+  RefreshCw,
+  Satellite
 } from 'lucide-react';
 
 export default function App() {
@@ -41,6 +43,10 @@ export default function App() {
   // API Key Management Modal State
   const [keyModalOpen, setKeyModalOpen] = useState(false);
   const [keyStatus, setKeyStatus] = useState(null);
+
+  // Google Earth Engine Modal & Layer State
+  const [geeModalOpen, setGeeModalOpen] = useState(false);
+  const [currentBasemap, setCurrentBasemap] = useState('esriStreet');
 
   // Load geojson data for the heatmap
   const { geojson, loading: mapLoading, reload: reloadMap } = useMapData(selectedCity, selectedConcept);
@@ -137,6 +143,18 @@ export default function App() {
               <span>Top Area: <strong>{topOpportunity.properties.label}</strong> (Gap: {topOpportunity.properties.gap.toFixed(2)})</span>
             </div>
           )}
+
+          {/* Google Earth Engine Button */}
+          <button
+            onClick={() => setGeeModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 text-white hover:bg-slate-800 rounded-lg text-xs font-semibold shadow-xs transition-all border border-slate-700 cursor-pointer"
+          >
+            <Satellite className="h-3.5 w-3.5 text-sky-400" />
+            <span className="hidden sm:inline">Earth Engine</span>
+            <span className="text-[10px] bg-sky-500/30 text-sky-200 px-1.5 py-0.2 rounded font-mono">
+              Sentinel-1
+            </span>
+          </button>
 
           {/* Qloo Key Status Button */}
           <button
@@ -306,6 +324,9 @@ export default function App() {
             livePoint={livePoint}
             onCellClick={handleCellClick}
             onLivePointClick={handleLivePointClick}
+            onOpenGeeModal={() => setGeeModalOpen(true)}
+            currentBasemap={currentBasemap}
+            onBasemapChange={setCurrentBasemap}
           />
 
           {/* Floating Instructions Pill */}
@@ -326,6 +347,16 @@ export default function App() {
           </div>
         </main>
       </div>
+
+      {/* Google Earth Engine Modal */}
+      <GeeModal
+        isOpen={geeModalOpen}
+        onClose={() => setGeeModalOpen(false)}
+        activeLayerId={currentBasemap}
+        onLayerSelect={(layerId) => {
+          setCurrentBasemap(layerId);
+        }}
+      />
 
       {/* Key Management Modal */}
       <ApiKeyModal

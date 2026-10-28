@@ -112,10 +112,11 @@ export async function fetchKeyStatus() {
 /**
  * Update API keys dynamically
  */
-export async function updateApiKeys({ qlooApiKey, openaiApiKey }) {
+export async function updateApiKeys({ qlooApiKey, openaiApiKey, eeProjectId }) {
   const { data } = await client.post('/settings/keys', {
     qloo_api_key: qlooApiKey,
     openai_api_key: openaiApiKey,
+    ee_project_id: eeProjectId,
   });
   return data;
 }
@@ -131,6 +132,46 @@ export async function uploadEnvFile(file) {
       'Content-Type': 'multipart/form-data',
     },
   });
+  return data;
+}
+
+/**
+ * Earth Engine (GEE) API Calls
+ */
+export async function fetchGeeStatus() {
+  const { data } = await client.get('/gee/status');
+  return data;
+}
+
+export async function fetchGeeTileUrl(layer = 'sentinel1') {
+  const { data } = await client.get('/gee/tile-url', {
+    params: { layer },
+  });
+  return data;
+}
+
+export async function initGee({ projectId, serviceAccountEmail, serviceAccountKey }) {
+  const { data } = await client.post('/gee/init', {
+    project_id: projectId,
+    service_account_email: serviceAccountEmail,
+    service_account_key: serviceAccountKey,
+  });
+  return data;
+}
+
+export async function uploadGeeServiceAccount(file) {
+  const formData = new FormData();
+  formData.append('file', file);
+  const { data } = await client.post('/gee/upload-service-account', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
+  return data;
+}
+
+export async function verifySentinel1() {
+  const { data } = await client.get('/gee/verify-sentinel1');
   return data;
 }
 

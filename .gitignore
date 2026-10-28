@@ -15,7 +15,7 @@ node_modules/
 dist/
 .vite/
 
-# Environment
+# Environment & Credentials
 .env
 *.env
 **/.env
@@ -23,6 +23,8 @@ dist/
 .env.*.local
 !.env.example
 !**/.env.example
+*service-account*.json
+*credentials*.json
 
 # IDE
 .vscode/
