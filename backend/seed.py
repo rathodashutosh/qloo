@@ -117,7 +117,7 @@ SAMPLE_VENUES = {
     "specialty-coffee": [
         "Blue Tokai Coffee Roasters", "Third Wave Coffee", "Subko Coffee Roasters",
         "Araku Coffee", "Maverick & Farmer Coffee", "Brik Oven Coffee & Bakes",
-        "Kcroasters", "Roastery Coffee House", "Sey Coffee", "Devoción"
+        "Kcroasters", "Roastery Coffee House"
     ],
     "live-music-venue": [
         "The Piano Man Jazz Club", "Fandom at Gilly's", "antiSOCIAL",

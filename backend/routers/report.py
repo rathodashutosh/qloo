@@ -1,12 +1,13 @@
-"""Report router — LLM-generated narrative reports."""
+"""Report router — generates comprehensive AI narrative business briefs."""
 
+import re
 import json
 import logging
-
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from db import database
 from models import ReportRequest, ReportResponse
 from services.llm import generate_report
+from services.location_intelligence import analyze_location
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -15,83 +16,62 @@ router = APIRouter()
 @router.post("/report", response_model=ReportResponse)
 async def create_report(req: ReportRequest):
     """
-    Generate an LLM-powered business brief for a cell × concept.
+    Generate an AI executive narrative brief for a cell or live clicked coordinate.
+    Runs real-time Qloo analysis to retrieve authentic local competitors and taste signals.
     """
-    # Fetch cell info
+    concept_id = req.concept_id or "specialty-coffee"
+    lat = None
+    lon = None
+    label = None
+
+    # Check if cell_id is a live point like live_12.9784_77.6408 or coord_12.9784
+    coord_match = re.search(r"(\d+\.\d+)[^\d]+(\d+\.\d+)", req.cell_id)
+    if coord_match:
+        lat = float(coord_match.group(1))
+        lon = float(coord_match.group(2))
+
+    # Fetch cell from DB if not parsed from coordinates
     cell = await database.fetch_one(
         "SELECT * FROM cells WHERE id = :id", values={"id": req.cell_id}
     )
-    if not cell:
-        # Check if cell exists with prefix or partial match
-        cell = await database.fetch_one(
-            "SELECT * FROM cells WHERE id LIKE :id_pattern LIMIT 1",
-            values={"id_pattern": f"%{req.cell_id}%"},
+    if cell:
+        lat = cell["lat"]
+        lon = cell["lon"]
+        label = cell["label"]
+
+    # If coordinates are known, run real-time analysis
+    if lat and lon:
+        analysis = await analyze_location(
+            lat=lat,
+            lon=lon,
+            concept_id=concept_id,
+            area_label=label,
+            radius_km=1.5,
         )
-    if not cell:
-        # Fallback cell structure
-        cell = {"id": req.cell_id, "label": req.cell_id}
 
-    # Fetch concept
-    concept = await database.fetch_one(
-        "SELECT * FROM concepts WHERE id = :id", values={"id": req.concept_id}
-    )
-    if not concept:
-        concept = {"id": req.concept_id, "name": req.concept_id.replace("-", " ").title()}
+        concept_name = analysis["concept_name"]
+        cell_label = analysis["label"]
+        demand = analysis["demand"]
+        supply = analysis["supply"]
+        gap = analysis["gap"]
+        confidence = analysis["confidence"]
+        venue_count = analysis["venue_count"]
+        taste_tags = analysis["taste_tags"]
+        venues = analysis["venues"]
+    else:
+        # Fallback
+        concept_name = concept_id.replace("-", " ").title()
+        cell_label = req.city or req.cell_id
+        demand = 0.75
+        supply = 0.25
+        gap = 0.56
+        confidence = "medium"
+        venue_count = 3
+        taste_tags = ["artisan", "contemporary", "local community"]
+        venues = []
 
-    # Fetch score
-    score = await database.fetch_one(
-        """
-        SELECT demand, supply, gap, confidence, venue_count, qloo_payload_json
-        FROM scores
-        WHERE cell_id = :cell_id AND concept_id = :concept_id
-        """,
-        values={"cell_id": req.cell_id, "concept_id": req.concept_id},
-    )
-
-    demand = score["demand"] if score and score["demand"] is not None else 0.65
-    supply = score["supply"] if score and score["supply"] is not None else 0.30
-    gap = score["gap"] if score and score["gap"] is not None else (demand * (1.0 - supply))
-    confidence = score["confidence"] if score and score["confidence"] else "medium"
-    venue_count = score["venue_count"] if score and score["venue_count"] is not None else 3
-
-    # Extract taste tags
-    taste_tags: list[str] = []
-    if score and score["qloo_payload_json"]:
-        try:
-            payload = json.loads(score["qloo_payload_json"])
-            results = payload.get("results", [])
-            for result in results:
-                tags = result.get("tags", [])
-                for tag in tags:
-                    tag_name = tag.get("name", "") if isinstance(tag, dict) else str(tag)
-                    if tag_name and tag_name not in taste_tags:
-                        taste_tags.append(tag_name)
-        except (json.JSONDecodeError, TypeError):
-            pass
-
-    concept_dict = dict(concept) if concept else {}
-    if not taste_tags and concept_dict.get("qloo_tags"):
-        try:
-            val = concept_dict["qloo_tags"]
-            taste_tags = json.loads(val) if isinstance(val, str) else list(val)
-        except Exception:
-            pass
-
-    # Fetch venues
-    venue_rows = await database.fetch_all(
-        """
-        SELECT osm_id, name, lat, lon, tags_json
-        FROM venues
-        WHERE cell_id = :cell_id AND concept_id = :concept_id
-        """,
-        values={"cell_id": req.cell_id, "concept_id": req.concept_id},
-    )
-    venues = [dict(row._mapping) for row in venue_rows]
-
-    # Generate report
-    cell_label = cell["label"] or cell["id"]
     report_text = await generate_report(
-        concept_name=concept["name"],
+        concept_name=concept_name,
         cell_label=cell_label,
         demand=demand,
         supply=supply,
@@ -102,21 +82,9 @@ async def create_report(req: ReportRequest):
         venues=venues,
     )
 
-    structured_data = {
-        "cell_id": req.cell_id,
-        "cell_label": cell_label,
-        "concept_id": req.concept_id,
-        "concept_name": concept["name"],
-        "demand": demand,
-        "supply": supply,
-        "gap": gap,
-        "confidence": confidence,
-        "venue_count": venue_count,
-        "taste_tags": taste_tags[:10],
-    }
-
     return ReportResponse(
-        report_text=report_text,
+        cell_id=req.cell_id,
+        concept_id=concept_id,
         report=report_text,
-        structured_data=structured_data,
+        city=req.city,
     )
