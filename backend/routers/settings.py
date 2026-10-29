@@ -21,6 +21,7 @@ ENV_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env")
 class KeyUpdateRequest(BaseModel):
     qloo_api_key: Optional[str] = None
     openai_api_key: Optional[str] = None
+    gemini_api_key: Optional[str] = None
     ee_project_id: Optional[str] = None
 
 
@@ -29,6 +30,8 @@ class KeyStatusResponse(BaseModel):
     qloo_key_preview: Optional[str] = None
     openai_configured: bool
     openai_key_preview: Optional[str] = None
+    gemini_configured: bool = False
+    gemini_key_preview: Optional[str] = None
     ee_configured: bool = False
     ee_project: Optional[str] = None
     validation_status: Optional[str] = None
@@ -43,6 +46,7 @@ def mask_key(key: str) -> str:
 def save_env_file(
     qloo_key: Optional[str] = None,
     openai_key: Optional[str] = None,
+    gemini_key: Optional[str] = None,
     ee_project: Optional[str] = None,
 ):
     """Write or update keys in .env file."""
@@ -62,6 +66,8 @@ def save_env_file(
         env_content["QLOO_API_KEY"] = qloo_key.strip()
     if openai_key is not None:
         env_content["OPENAI_API_KEY"] = openai_key.strip()
+    if gemini_key is not None:
+        env_content["GEMINI_API_KEY"] = gemini_key.strip()
     if ee_project is not None:
         env_content["EE_PROJECT_ID"] = ee_project.strip()
 
@@ -103,6 +109,8 @@ async def get_key_status():
     """Return status of configured API keys."""
     qloo_active = bool(settings.QLOO_API_KEY and not settings.QLOO_API_KEY.startswith("your-"))
     openai_active = bool(settings.OPENAI_API_KEY and not settings.OPENAI_API_KEY.startswith("your-"))
+    gemini_key = getattr(settings, "GEMINI_API_KEY", "") or os.environ.get("GEMINI_API_KEY", "")
+    gemini_active = bool(gemini_key and len(gemini_key) > 8)
     ee_project = getattr(settings, "EE_PROJECT_ID", "") or os.environ.get("EE_PROJECT_ID", "")
     ee_active = bool(ee_project)
 
@@ -111,6 +119,8 @@ async def get_key_status():
         qloo_key_preview=mask_key(settings.QLOO_API_KEY) if qloo_active else None,
         openai_configured=openai_active,
         openai_key_preview=mask_key(settings.OPENAI_API_KEY) if openai_active else None,
+        gemini_configured=gemini_active,
+        gemini_key_preview=mask_key(gemini_key) if gemini_active else None,
         ee_configured=ee_active,
         ee_project=ee_project if ee_active else None,
         validation_status="Configured" if qloo_active else "Qloo API key needed",
@@ -141,6 +151,12 @@ async def update_keys(req: KeyUpdateRequest):
         settings.OPENAI_API_KEY = req.openai_api_key.strip()
         save_env_file(openai_key=req.openai_api_key.strip())
 
+    if req.gemini_api_key is not None and req.gemini_api_key.strip():
+        gkey = req.gemini_api_key.strip()
+        settings.GEMINI_API_KEY = gkey
+        os.environ["GEMINI_API_KEY"] = gkey
+        save_env_file(gemini_key=gkey)
+
     if req.ee_project_id is not None:
         ee_proj = req.ee_project_id.strip()
         settings.EE_PROJECT_ID = ee_proj
@@ -155,6 +171,7 @@ async def update_keys(req: KeyUpdateRequest):
         "message": validation_message or "Keys updated successfully",
         "qloo_configured": bool(settings.QLOO_API_KEY),
         "openai_configured": bool(settings.OPENAI_API_KEY),
+        "gemini_configured": bool(getattr(settings, "GEMINI_API_KEY", "")),
         "ee_configured": bool(getattr(settings, "EE_PROJECT_ID", "")),
     }
 

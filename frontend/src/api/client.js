@@ -112,10 +112,11 @@ export async function fetchKeyStatus() {
 /**
  * Update API keys dynamically
  */
-export async function updateApiKeys({ qlooApiKey, openaiApiKey, eeProjectId }) {
+export async function updateApiKeys({ qlooApiKey, openaiApiKey, geminiApiKey, eeProjectId }) {
   const { data } = await client.post('/settings/keys', {
     qloo_api_key: qlooApiKey,
     openai_api_key: openaiApiKey,
+    gemini_api_key: geminiApiKey,
     ee_project_id: eeProjectId,
   });
   return data;

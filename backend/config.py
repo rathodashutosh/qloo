@@ -16,6 +16,7 @@ class Settings(BaseSettings):
 
     QLOO_API_KEY: str = ""
     OPENAI_API_KEY: str = ""
+    GEMINI_API_KEY: str = ""
     EE_PROJECT_ID: str = ""
     DATABASE_URL: str = "sqlite:///./taste_gap.db"
 

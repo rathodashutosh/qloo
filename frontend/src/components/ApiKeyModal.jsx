@@ -4,6 +4,7 @@ import { Key, Upload, CheckCircle2, AlertCircle, X, Shield, RefreshCw } from 'lu
 
 export default function ApiKeyModal({ isOpen, onClose, onKeysUpdated }) {
   const [qlooKey, setQlooKey] = useState('');
+  const [geminiKey, setGeminiKey] = useState('');
   const [openaiKey, setOpenaiKey] = useState('');
   const [eeProject, setEeProject] = useState('');
   const [loading, setLoading] = useState(false);
@@ -26,7 +27,7 @@ export default function ApiKeyModal({ isOpen, onClose, onKeysUpdated }) {
 
   const handleSave = async (e) => {
     e.preventDefault();
-    if (!qlooKey.trim() && !openaiKey.trim() && !eeProject.trim()) return;
+    if (!qlooKey.trim() && !geminiKey.trim() && !openaiKey.trim() && !eeProject.trim()) return;
 
     setLoading(true);
     setResultMessage(null);
@@ -35,6 +36,7 @@ export default function ApiKeyModal({ isOpen, onClose, onKeysUpdated }) {
     try {
       const res = await updateApiKeys({
         qlooApiKey: qlooKey.trim() || undefined,
+        geminiApiKey: geminiKey.trim() || undefined,
         openaiApiKey: openaiKey.trim() || undefined,
         eeProjectId: eeProject.trim() || undefined,
       });
@@ -102,23 +104,47 @@ export default function ApiKeyModal({ isOpen, onClose, onKeysUpdated }) {
         {/* Content */}
         <div className="p-6 space-y-5">
           {/* Status summary */}
-          <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs flex items-center justify-between">
-            <div>
-              <span className="text-slate-500 font-medium">Qloo Status: </span>
-              {status?.qloo_configured ? (
-                <span className="text-emerald-700 font-semibold inline-flex items-center gap-1">
-                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
-                  Active ({status.qloo_key_preview})
-                </span>
-              ) : (
-                <span className="text-amber-700 font-semibold inline-flex items-center gap-1">
-                  <AlertCircle className="h-3.5 w-3.5 text-amber-600" />
-                  Key Needed
-                </span>
-              )}
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs space-y-1.5">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-slate-500 font-medium">Qloo Taste API: </span>
+                {status?.qloo_configured ? (
+                  <span className="text-emerald-700 font-semibold inline-flex items-center gap-1">
+                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                    Active ({status.qloo_key_preview})
+                  </span>
+                ) : (
+                  <span className="text-amber-700 font-semibold inline-flex items-center gap-1">
+                    <AlertCircle className="h-3.5 w-3.5 text-amber-600" />
+                    Key Needed
+                  </span>
+                )}
+              </div>
+              <div className="text-slate-400 text-[11px]">
+                Base: <code className="bg-slate-200 px-1 py-0.5 rounded text-slate-700">hackathon.api.qloo.com</code>
+              </div>
             </div>
-            <div className="text-slate-400 text-[11px]">
-              Base: <code className="bg-slate-200 px-1 py-0.5 rounded text-slate-700">hackathon.api.qloo.com</code>
+
+            <div className="flex items-center justify-between border-t border-slate-200/60 pt-1.5">
+              <div>
+                <span className="text-slate-500 font-medium">AI Model Engine: </span>
+                {status?.gemini_configured ? (
+                  <span className="text-indigo-700 font-semibold inline-flex items-center gap-1">
+                    <CheckCircle2 className="h-3.5 w-3.5 text-indigo-600" />
+                    Google Gemini 3.5 Flash Active ({status.gemini_key_preview})
+                  </span>
+                ) : status?.openai_configured ? (
+                  <span className="text-emerald-700 font-semibold inline-flex items-center gap-1">
+                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                    OpenAI Active ({status.openai_key_preview})
+                  </span>
+                ) : (
+                  <span className="text-slate-600 font-medium">Built-in Analytical Engine (Active)</span>
+                )}
+              </div>
+              <span className="text-[10px] px-1.5 py-0.2 rounded bg-indigo-100 text-indigo-800 font-semibold">
+                Gemini Free Tier
+              </span>
             </div>
           </div>
 
@@ -142,9 +168,29 @@ export default function ApiKeyModal({ isOpen, onClose, onKeysUpdated }) {
               </p>
             </div>
 
+            {/* Google Gemini API Key */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-semibold text-slate-700">
+                  Google Gemini API Key <span className="text-indigo-600 font-semibold">(Recommended Free Model)</span>
+                </label>
+                <span className="text-[10px] text-indigo-600 font-medium">1,500 calls/day free</span>
+              </div>
+              <input
+                type="password"
+                placeholder="AQ.Ab8... or AIzaSy..."
+                value={geminiKey}
+                onChange={(e) => setGeminiKey(e.target.value)}
+                className="w-full text-xs px-3 py-2.5 rounded-lg border border-indigo-300 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono bg-indigo-50/20"
+              />
+              <p className="text-[10px] text-slate-400 mt-1">
+                Powers Gemini 3.5 Flash for business brief generation & interactive site selection chat.
+              </p>
+            </div>
+
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
-                OpenAI API Key <span className="text-slate-400 font-normal">(Optional)</span>
+                OpenAI API Key <span className="text-slate-400 font-normal">(Optional alternate)</span>
               </label>
               <input
                 type="password"
@@ -153,9 +199,6 @@ export default function ApiKeyModal({ isOpen, onClose, onKeysUpdated }) {
                 onChange={(e) => setOpenaiKey(e.target.value)}
                 className="w-full text-xs px-3 py-2.5 rounded-lg border border-slate-300 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono"
               />
-              <p className="text-[10px] text-slate-400 mt-1">
-                If omitted, the app uses its built-in analytical brief generator.
-              </p>
             </div>
 
             <div>

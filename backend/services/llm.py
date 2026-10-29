@@ -1,6 +1,12 @@
-"""LLM service for generating narrative reports and chat responses."""
+"""LLM service for generating narrative reports and chat responses.
+
+Supports Google Gemini (gemini-3.5-flash / gemini-3.5-flash-lite) and OpenAI (gpt-4o-mini),
+with a deterministic analytical brief fallback when no API key is provided.
+"""
 
 import logging
+import httpx
+from typing import Optional
 from openai import AsyncOpenAI
 
 from config import get_settings
@@ -31,7 +37,50 @@ Rules:
 - If the user asks for suggestions or comparisons, highlight high-gap areas with low competition"""
 
 
-def _get_client() -> AsyncOpenAI | None:
+async def _call_gemini(system_prompt: str, user_prompt: str, max_tokens: int = 650) -> Optional[str]:
+    """Call Google Gemini API using the configured GEMINI_API_KEY."""
+    gemini_key = settings.GEMINI_API_KEY.strip() if settings.GEMINI_API_KEY else ""
+    if not gemini_key:
+        return None
+
+    # Models to try in order of preference
+    candidate_models = ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.8-flash"]
+
+    for model_name in candidate_models:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={gemini_key}"
+        payload = {
+            "systemInstruction": {"parts": [{"text": system_prompt}]},
+            "contents": [{"parts": [{"text": user_prompt}]}],
+            "generationConfig": {
+                "temperature": 0.7,
+                "maxOutputTokens": max_tokens,
+            },
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=25.0) as client:
+                resp = await client.post(url, json=payload)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    candidates = data.get("candidates", [])
+                    if candidates:
+                        parts = candidates[0].get("content", {}).get("parts", [])
+                        if parts and "text" in parts[0]:
+                            logger.info("Successfully generated report using Gemini model: %s", model_name)
+                            return parts[0]["text"]
+                elif resp.status_code == 404:
+                    # Model deprecated or alternate name needed, try next model
+                    logger.warning("Gemini model %s returned 404, trying next candidate...", model_name)
+                    continue
+                else:
+                    logger.warning("Gemini API call returned status %d: %s", resp.status_code, resp.text[:200])
+        except Exception as e:
+            logger.warning("Error calling Gemini API (%s): %s", model_name, e)
+
+    return None
+
+
+def _get_openai_client() -> AsyncOpenAI | None:
     if not settings.OPENAI_API_KEY or settings.OPENAI_API_KEY.startswith("sk-placeholder") or settings.OPENAI_API_KEY.strip() == "":
         return None
     return AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
@@ -90,9 +139,8 @@ def _generate_chat_fallback(message: str, context: dict) -> str:
     if "cheap" in lower_msg or "budget" in lower_msg or "rent" in lower_msg:
         return (
             f"When looking for lower-rent opportunities for **{concept}** in **{city}**, "
-            "outer ring cells (such as Bushwick, Crown Heights, or Sunnyside) typically offer "
-            "30-50% lower commercial lease rates than core Manhattan hubs (SoHo/Chelsea), while still maintaining strong demand scores. "
-            "Inspect cells with gap scores above 0.50 outside the downtown corridor for optimal capital efficiency."
+            "inspect outer-ring grid cells that maintain demand above 0.70 with minimal competitors. "
+            "These typically offer 30-50% lower commercial lease rates than core arterial hubs."
         )
     elif "compet" in lower_msg or "venue" in lower_msg:
         return (
@@ -123,14 +171,7 @@ async def generate_report(
     taste_tags: list[str],
     venues: list[dict],
 ) -> str:
-    """Generate a narrative business brief using LLM or structured fallback."""
-    client = _get_client()
-    if client is None:
-        logger.info("OpenAI API key not configured, using structured analytical brief generator.")
-        return _generate_analytical_brief(
-            concept_name, cell_label, demand, supply, gap, confidence, venue_count, taste_tags, venues
-        )
-
+    """Generate a narrative business brief using Gemini, OpenAI, or analytical brief generator."""
     venue_list_text = ""
     if venues:
         venue_names = [v.get("name", "Unnamed") for v in venues[:12] if v.get("name")]
@@ -152,35 +193,42 @@ async def generate_report(
 
 Write a comprehensive business brief for opening a {concept_name} in {cell_label}."""
 
-    try:
-        logger.info("Generating LLM report via OpenAI for %s in %s", concept_name, cell_label)
-        response = await client.chat.completions.create(
-            model=settings.OPENAI_MODEL,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT_REPORT},
-                {"role": "user", "content": user_message},
-            ],
-            temperature=0.7,
-            max_tokens=650,
-        )
-        return response.choices[0].message.content or ""
-    except Exception as exc:
-        logger.warning("OpenAI API call failed (%s); falling back to analytical brief generator.", exc)
-        return _generate_analytical_brief(
-            concept_name, cell_label, demand, supply, gap, confidence, venue_count, taste_tags, venues
-        )
+    # 1. Try Google Gemini first
+    if settings.GEMINI_API_KEY:
+        gemini_response = await _call_gemini(SYSTEM_PROMPT_REPORT, user_message, max_tokens=650)
+        if gemini_response:
+            return gemini_response
+
+    # 2. Try OpenAI
+    openai_client = _get_openai_client()
+    if openai_client:
+        try:
+            logger.info("Generating LLM report via OpenAI for %s in %s", concept_name, cell_label)
+            response = await openai_client.chat.completions.create(
+                model=settings.OPENAI_MODEL,
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT_REPORT},
+                    {"role": "user", "content": user_message},
+                ],
+                temperature=0.7,
+                max_tokens=650,
+            )
+            return response.choices[0].message.content or ""
+        except Exception as exc:
+            logger.warning("OpenAI API call failed (%s); falling back...", exc)
+
+    # 3. Fallback to analytical brief generator
+    return _generate_analytical_brief(
+        concept_name, cell_label, demand, supply, gap, confidence, venue_count, taste_tags, venues
+    )
 
 
 async def chat(
     message: str,
     context: dict | None = None,
 ) -> str:
-    """Handle chat messages with optional data context."""
+    """Handle chat messages with optional data context via Gemini or OpenAI."""
     context = context or {}
-    client = _get_client()
-
-    if client is None:
-        return _generate_chat_fallback(message, context)
 
     context_parts = []
     if context.get("city"):
@@ -195,18 +243,29 @@ async def chat(
     context_text = "\n".join(context_parts) if context_parts else "No specific context."
     user_message = f"Context:\n{context_text}\n\nUser question: {message}"
 
-    try:
-        logger.info("Calling OpenAI chat completion for query: %s", message[:80])
-        response = await client.chat.completions.create(
-            model=settings.OPENAI_MODEL,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT_CHAT},
-                {"role": "user", "content": user_message},
-            ],
-            temperature=0.7,
-            max_tokens=500,
-        )
-        return response.choices[0].message.content or ""
-    except Exception as exc:
-        logger.warning("OpenAI chat failed (%s); using fallback response.", exc)
-        return _generate_chat_fallback(message, context)
+    # 1. Try Google Gemini
+    if settings.GEMINI_API_KEY:
+        gemini_response = await _call_gemini(SYSTEM_PROMPT_CHAT, user_message, max_tokens=500)
+        if gemini_response:
+            return gemini_response
+
+    # 2. Try OpenAI
+    openai_client = _get_openai_client()
+    if openai_client:
+        try:
+            logger.info("Calling OpenAI chat completion for query: %s", message[:80])
+            response = await openai_client.chat.completions.create(
+                model=settings.OPENAI_MODEL,
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT_CHAT},
+                    {"role": "user", "content": user_message},
+                ],
+                temperature=0.7,
+                max_tokens=500,
+            )
+            return response.choices[0].message.content or ""
+        except Exception as exc:
+            logger.warning("OpenAI chat failed (%s); using fallback response.", exc)
+
+    # 3. Deterministic chat fallback
+    return _generate_chat_fallback(message, context)

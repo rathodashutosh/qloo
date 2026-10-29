@@ -69,9 +69,11 @@ async def create_report(req: ReportRequest):
         except (json.JSONDecodeError, TypeError):
             pass
 
-    if not taste_tags and concept.get("qloo_tags"):
+    concept_dict = dict(concept) if concept else {}
+    if not taste_tags and concept_dict.get("qloo_tags"):
         try:
-            taste_tags = json.loads(concept["qloo_tags"])
+            val = concept_dict["qloo_tags"]
+            taste_tags = json.loads(val) if isinstance(val, str) else list(val)
         except Exception:
             pass
 
