@@ -72,9 +72,232 @@ CONCEPT_MAP = {
         "tags": ["wine bar", "natural wine", "sommelier", "tasting room"],
         "saturation": 4,
     },
+    "chinese-restaurant": {
+        "name": "Chinese Restaurant",
+        "search_term": "chinese restaurant dim sum asian noodles",
+        "osm_term": "restaurant chinese",
+        "tags": ["chinese", "dim sum", "indo-chinese", "noodles", "asian dining"],
+        "saturation": 6,
+    },
+    "italian-trattoria": {
+        "name": "Italian Trattoria",
+        "search_term": "italian restaurant pizzeria trattoria pasta",
+        "osm_term": "restaurant italian",
+        "tags": ["italian", "pizza", "artisan pasta", "woodfired", "trattoria"],
+        "saturation": 5,
+    },
+    "bakery-patisserie": {
+        "name": "Bakery & Patisserie",
+        "search_term": "bakery patisserie artisan bread pastry cakes",
+        "osm_term": "bakery cafe",
+        "tags": ["artisan bakery", "sourdough", "patisserie", "french pastry", "croissants"],
+        "saturation": 7,
+    },
+    "sushi-bar": {
+        "name": "Sushi & Japanese",
+        "search_term": "sushi japanese restaurant ramen omakase",
+        "osm_term": "restaurant japanese",
+        "tags": ["sushi", "japanese", "sashimi", "omakase", "contemporary asian"],
+        "saturation": 4,
+    },
+    "ramen-shop": {
+        "name": "Ramen Shop",
+        "search_term": "ramen shop japanese noodles broth",
+        "osm_term": "restaurant ramen",
+        "tags": ["ramen", "tonkotsu", "japanese noodles", "comfort food"],
+        "saturation": 4,
+    },
+    "boba-bubble-tea": {
+        "name": "Boba & Bubble Tea",
+        "search_term": "boba bubble tea milk tea tapioca",
+        "osm_term": "cafe bubble_tea",
+        "tags": ["boba", "bubble tea", "taiwanese", "fruit tea", "youth hangout"],
+        "saturation": 6,
+    },
+    "dessert-gelato": {
+        "name": "Artisan Gelato & Desserts",
+        "search_term": "gelato dessert ice cream waffles",
+        "osm_term": "cafe ice_cream",
+        "tags": ["gelato", "artisan ice cream", "dessert bar", "late night sweet"],
+        "saturation": 5,
+    },
+    "mexican-taqueria": {
+        "name": "Mexican Taqueria",
+        "search_term": "mexican restaurant taqueria tacos margaritas",
+        "osm_term": "restaurant mexican",
+        "tags": ["tacos", "taqueria", "mexican", "street food", "margaritas"],
+        "saturation": 4,
+    },
+    "cocktail-speakeasy": {
+        "name": "Speakeasy Cocktail Bar",
+        "search_term": "cocktail bar speakeasy mixology lounge",
+        "osm_term": "bar cocktail",
+        "tags": ["craft cocktails", "speakeasy", "mixology", "intimate lounge"],
+        "saturation": 4,
+    },
+    "sports-bar": {
+        "name": "Sports Bar",
+        "search_term": "sports bar pub screens draft beer",
+        "osm_term": "pub bar",
+        "tags": ["sports bar", "live screening", "draft beer", "pub snacks"],
+        "saturation": 4,
+    },
+    "rooftop-lounge": {
+        "name": "Rooftop Lounge",
+        "search_term": "rooftop bar lounge scenic view dining",
+        "osm_term": "bar rooftop",
+        "tags": ["rooftop", "scenic view", "lounge", "evening cocktails"],
+        "saturation": 4,
+    },
+    "burger-diner": {
+        "name": "Smash Burger & Craft Shakes",
+        "search_term": "gourmet burger diner craft shakes",
+        "osm_term": "fast_food burger",
+        "tags": ["smash burger", "craft burgers", "shakes", "comfort fast food"],
+        "saturation": 5,
+    },
+    "dim-sum-parlor": {
+        "name": "Dim Sum Parlor",
+        "search_term": "dim sum dumplings tea house cantonese",
+        "osm_term": "restaurant dim_sum",
+        "tags": ["dim sum", "dumplings", "cantonese", "bao", "tea house"],
+        "saturation": 4,
+    },
+    "korean-bbq": {
+        "name": "Korean BBQ",
+        "search_term": "korean bbq korean fried chicken bulgogi",
+        "osm_term": "restaurant korean",
+        "tags": ["korean bbq", "bulgogi", "korean fried chicken", "table grill"],
+        "saturation": 4,
+    },
+    "pet-cafe": {
+        "name": "Cat & Pet Cafe",
+        "search_term": "cat cafe pet friendly dog cafe",
+        "osm_term": "cafe",
+        "tags": ["pet friendly", "cat cafe", "dog cafe", "animal lovers"],
+        "saturation": 3,
+    },
 }
 
 _PROFILE_CACHE: Dict[str, Dict[str, Any]] = {}
+
+
+# Categories and keywords to strictly exclude from competitor venues
+NON_COMPETITOR_KEYWORDS = {
+    # Monuments & historical
+    "monument", "statue", "memorial", "pillar", "archaeological", "heritage site",
+    # Lodging / Accommodations
+    "hotel", "inn", "resort", "motel", "lodge", "lodging", "treebo", "oyo", "homestay", "guest house",
+    # Beauty, Salons & Clinics
+    "salon", "spa", "clinic", "hospital", "dermatolog", "beauty", "hair", "nail", "dental", "pharmacy",
+    # Retail / Non-food
+    "boutique", "jeweller", "jewelry", "clothing", "saree", "watch", "electronics",
+    "hardware", "opticals", "optician", "bank", "atm", "supermarket", "provision",
+    "kangan", "fancy store", "stationery", "tailor", "dry clean", "petrol", "fuel",
+}
+
+CONCEPT_CATEGORY_MATCHES = {
+    "specialty-coffee": {
+        "required_any": ["cafe", "coffee", "roaster", "roastery", "bakery", "bake", "espresso", "tea", "bistro", "pastry", "patisserie", "dessert", "thindi", "tiffin"],
+    },
+    "live-music-venue": {
+        "required_any": ["music", "jazz", "pub", "bar", "lounge", "club", "concert", "brewery", "tavern", "acoustic", "band"],
+    },
+    "board-game-cafe": {
+        "required_any": ["game", "board game", "cafe", "coffee", "gaming", "tabletop"],
+    },
+    "bookstore-cafe": {
+        "required_any": ["book", "library", "cafe", "reading", "coffee", "literary"],
+    },
+    "vegan-restaurant": {
+        "required_any": ["vegan", "plant", "organic", "restaurant", "cafe", "salad", "healthy", "dining", "vegetarian"],
+    },
+    "co-working-cafe": {
+        "required_any": ["cowork", "work", "cafe", "coffee", "space", "workspace", "hub"],
+    },
+    "craft-brewery": {
+        "required_any": ["brewery", "brewpub", "beer", "craft beer", "pub", "bar", "alehouse", "taproom"],
+    },
+    "natural-wine-bar": {
+        "required_any": ["wine", "bar", "lounge", "sommelier", "tasting", "bistro", "vineyard"],
+    },
+    "chinese-restaurant": {
+        "required_any": ["chinese", "noodle", "dumpling", "asian", "dim sum", "wok", "schezwan", "chopsticks"],
+    },
+    "italian-trattoria": {
+        "required_any": ["italian", "pizza", "pasta", "trattoria", "pizzeria", "woodfired", "gelato"],
+    },
+    "bakery-patisserie": {
+        "required_any": ["bakery", "bake", "patisserie", "pastry", "cake", "bread", "croissant", "dessert"],
+    },
+    "sushi-bar": {
+        "required_any": ["sushi", "japanese", "ramen", "maki", "bento", "sashimi", "asian"],
+    },
+    "ramen-shop": {
+        "required_any": ["ramen", "noodle", "japanese", "broth", "tonkotsu"],
+    },
+    "boba-bubble-tea": {
+        "required_any": ["boba", "bubble tea", "tea", "milk tea", "tapioca"],
+    },
+    "dessert-gelato": {
+        "required_any": ["gelato", "ice cream", "dessert", "waffle", "sweet", "pastry"],
+    },
+    "mexican-taqueria": {
+        "required_any": ["mexican", "taco", "taqueria", "burrito", "nachos", "margarita"],
+    },
+    "cocktail-speakeasy": {
+        "required_any": ["cocktail", "bar", "speakeasy", "lounge", "spirits", "mixology"],
+    },
+    "sports-bar": {
+        "required_any": ["sports bar", "pub", "bar", "brew", "beer", "draft", "games"],
+    },
+    "rooftop-lounge": {
+        "required_any": ["rooftop", "lounge", "bar", "sky", "view"],
+    },
+    "burger-diner": {
+        "required_any": ["burger", "fries", "diner", "patty", "shakes"],
+    },
+    "dim-sum-parlor": {
+        "required_any": ["dim sum", "dumpling", "bao", "chinese", "tea house"],
+    },
+    "korean-bbq": {
+        "required_any": ["korean", "bbq", "barbecue", "kimchi", "bulgogi", "fried chicken"],
+    },
+    "pet-cafe": {
+        "required_any": ["cat", "dog", "pet", "cafe", "coffee", "puppy"],
+    },
+}
+
+
+def is_valid_competitor(name: str, tags: Any, item_type: str, concept_id: str) -> bool:
+    """Strictly verify if a venue is a relevant commercial competitor for the selected concept."""
+    if not name or len(name.strip()) < 2:
+        return False
+
+    name_lower = name.lower()
+    tag_list = tags if isinstance(tags, list) else list(tags.values()) if isinstance(tags, dict) else []
+    tag_str = " ".join(str(t).lower() for t in tag_list)
+    full_text = f"{name_lower} {tag_str} {str(item_type).lower()}"
+
+    # Explicit food/hospitality indicators
+    is_explicit_concept = any(w in name_lower for w in ["cafe", "coffee", "roastery", "roasters", "espresso", "bakehouse", "bakery", "restaurant", "bar", "pub", "bistro", "pizzeria", "taqueria", "brewery", "diner"])
+
+    if not is_explicit_concept:
+        # Check if name or tags contain any non-competitor keyword
+        for bad in NON_COMPETITOR_KEYWORDS:
+            if bad in name_lower or bad in tag_str:
+                return False
+
+    # Check match against concept keywords
+    concept_rules = CONCEPT_CATEGORY_MATCHES.get(concept_id)
+    if concept_rules:
+        required_keywords = concept_rules["required_any"]
+    else:
+        # Dynamic custom concept keywords
+        words = [w for w in concept_id.lower().replace("-", " ").split() if len(w) > 2]
+        required_keywords = words + ["restaurant", "cafe", "dining", "food", "kitchen", "bar"]
+
+    return any(kw in full_text for kw in required_keywords)
 
 
 def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -213,11 +436,11 @@ Return strictly JSON with:
   "hyperlocal_brief": "A 3-paragraph executive brief analyzing: 1) Why this exact site fits or does not fit, 2) Who the exact daily foot-traffic customers are here, and 3) Strategic positioning recommendations."
 }}"""
 
-    models = ["gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-3.5-flash"]
+    models = ["gemini-3.8-flash", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-flash-latest"]
     for m in models:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent?key={gkey}"
         try:
-            async with httpx.AsyncClient(timeout=18.0) as client:
+            async with httpx.AsyncClient(timeout=3.5) as client:
                 resp = await client.post(
                     url,
                     json={
@@ -232,8 +455,11 @@ Return strictly JSON with:
                         text = "".join(p.get("text", "") for p in parts if "text" in p and not p.get("thought", False))
                         if text:
                             return json.loads(text)
+                elif resp.status_code in (404, 503):
+                    continue
         except Exception as e:
             logger.debug("Gemini micro-market profiler attempt (%s) failed: %s", m, e)
+            continue
 
     return None
 
@@ -257,13 +483,27 @@ async def analyze_location(
     road_name = geo.get("road", "")
     display_label = area_label or geo["label"]
 
-    concept_info = CONCEPT_MAP.get(concept_id, {
-        "name": concept_id.replace("-", " ").title(),
-        "search_term": concept_id.replace("-", " "),
-        "osm_term": "cafe",
-        "tags": [concept_id.replace("-", " ")],
-        "saturation": 5,
-    })
+    if concept_id not in CONCEPT_MAP:
+        clean_name = concept_id.replace("-", " ").title()
+        c_low = concept_id.lower()
+        if any(w in c_low for w in ["bar", "pub", "brew", "wine", "cocktail", "lounge"]):
+            osm_term = "bar pub"
+        elif any(w in c_low for w in ["bakery", "bread", "pastry"]):
+            osm_term = "bakery"
+        elif any(w in c_low for w in ["restaurant", "dining", "chinese", "italian", "sushi", "ramen", "taco", "mexican", "burger", "pizza", "bbq"]):
+            osm_term = "restaurant"
+        else:
+            osm_term = "cafe restaurant"
+
+        concept_info = {
+            "name": clean_name,
+            "search_term": f"{clean_name} dining food",
+            "osm_term": osm_term,
+            "tags": [clean_name, "local dining", "food culture"],
+            "saturation": 5,
+        }
+    else:
+        concept_info = CONCEPT_MAP[concept_id]
 
     concept_name = concept_info["name"]
     saturation = concept_info["saturation"]
@@ -273,15 +513,30 @@ async def analyze_location(
     osm_venues = await _fetch_osm_venues(lat, lon, local_name, city_name, concept_info["osm_term"])
     qloo_venues = await _fetch_qloo_venues(lat, lon, local_name, city_name, concept_name)
 
-    # Merge venues, avoiding duplicates
+    # Filter and merge venues, avoiding non-competitor entities (monuments, salons, hotels, etc.)
     all_venues = []
     seen_names = set()
+    discovered_landmarks = []
 
     for v in osm_venues + qloo_venues:
         name = v.get("name")
-        if name and name.lower() not in seen_names:
-            seen_names.add(name.lower())
+        if not name or name.lower() in seen_names:
+            continue
+        seen_names.add(name.lower())
+
+        tags = v.get("tags", [])
+        v_type = v.get("type", "venue")
+
+        # Check if it is a genuine commercial competitor for this concept
+        if is_valid_competitor(name, tags, v_type, concept_id):
             all_venues.append(v)
+        else:
+            # Non-competitor entities: check if it's a prominent local landmark or monument
+            name_low = name.lower()
+            tag_low = " ".join(str(t).lower() for t in (tags if isinstance(tags, list) else []))
+            if any(w in name_low or w in tag_low for w in ["monument", "pillar", "statue", "memorial", "park", "garden", "temple", "circle", "junction", "heritage", "museum"]):
+                if name not in discovered_landmarks and len(discovered_landmarks) < 4:
+                    discovered_landmarks.append(name)
 
     # Sort strictly by distance to clicked point
     all_venues.sort(key=lambda x: x.get("distance_km", 99.0))
@@ -340,6 +595,11 @@ async def analyze_location(
         confidence = "medium"
         brief = None
         landmarks = []
+
+    # Merge any prominent local landmarks discovered from POI scan (e.g. Ashoka Pillar Monument)
+    for dlm in discovered_landmarks:
+        if dlm not in landmarks and len(landmarks) < 6:
+            landmarks.append(dlm)
 
     result = {
         "lat": lat,

@@ -44,7 +44,15 @@ export default function CellDetail({ cell, conceptId, city, loading, onClose }) 
     setReportLoading(true);
     setReportError(null);
     try {
-      const data = await generateReport(cell.id, conceptId, city);
+      const data = await generateReport(cell.id, conceptId, city, {
+        label: cell.label,
+        demand: cell.demand,
+        supply: cell.supply,
+        gap: cell.gap ?? cell.gap_score,
+        confidence: cell.confidence,
+        taste_tags: cell.tags || cell.taste_tags,
+        venues: cell.venues || cell.nearby_venues,
+      });
       setReport(data);
     } catch (err) {
       setReportError(err.message || 'Failed to generate report');

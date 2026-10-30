@@ -53,7 +53,20 @@ export default function LivePointDetail({
     setReportLoading(true);
     setReportError(null);
     try {
-      const res = await generateReport(`live_${data.lat.toFixed(4)}_${data.lon.toFixed(4)}`, conceptId, city);
+      const res = await generateReport(
+        `live_${data.lat.toFixed(4)}_${data.lon.toFixed(4)}`,
+        conceptId,
+        city,
+        {
+          label: data.label,
+          demand: data.demand,
+          supply: data.supply,
+          gap: data.gap,
+          confidence: data.confidence,
+          taste_tags: data.taste_tags,
+          venues: data.venues,
+        }
+      );
       setReport(res);
     } catch (err) {
       setReportError(err.message || 'Failed to generate report');

@@ -65,11 +65,12 @@ export async function fetchCellDetail(cellId, conceptId) {
 /**
  * Generate an AI report for a cell.
  */
-export async function generateReport(cellId, conceptId, city) {
+export async function generateReport(cellId, conceptId, city, contextData = {}) {
   const { data } = await client.post('/report', {
     cell_id: cellId,
     concept_id: conceptId,
     city,
+    ...contextData,
   });
   return data;
 }

@@ -106,6 +106,13 @@ class ReportRequest(BaseModel):
     cell_id: str
     concept_id: str
     city: Optional[str] = None
+    label: Optional[str] = None
+    demand: Optional[float] = None
+    supply: Optional[float] = None
+    gap: Optional[float] = None
+    confidence: Optional[str] = None
+    taste_tags: Optional[list[str]] = None
+    venues: Optional[list[dict]] = None
 
 
 class ReportResponse(BaseModel):

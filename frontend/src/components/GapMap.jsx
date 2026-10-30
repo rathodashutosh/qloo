@@ -15,6 +15,25 @@ const LIVE_POINT_SOURCE = 'live-point';
 const LIVE_POINT_LAYER = 'live-point-circle';
 const LIVE_POINT_PULSE = 'live-point-pulse';
 
+const SELECTED_AREA_SOURCE = 'selected-area-catchment';
+const SELECTED_AREA_FILL = 'selected-area-fill';
+const SELECTED_AREA_STROKE = 'selected-area-stroke';
+
+function createCirclePolygon(lng, lat, radiusKm = 1.5, points = 64) {
+  const km = radiusKm;
+  const ret = [];
+  const distanceX = km / (111.32 * Math.cos((lat * Math.PI) / 180));
+  const distanceY = km / 110.574;
+  for (let i = 0; i < points; i++) {
+    const theta = (i / points) * (2 * Math.PI);
+    const x = distanceX * Math.cos(theta);
+    const y = distanceY * Math.sin(theta);
+    ret.push([lng + x, lat + y]);
+  }
+  ret.push(ret[0]);
+  return ret;
+}
+
 /**
  * GapMap — interactive MapLibre map with:
  * - 100% free, unwatermarked basemaps (ESRI World Street, ESRI Light, OpenStreetMap)
@@ -29,6 +48,8 @@ export default function GapMap({
   selectedCellId,
   venueMarkers,
   livePoint,
+  selectedLocation,
+  compareLocation,
   onCellClick,
   onLivePointClick,
   onOpenGeeModal,
@@ -38,6 +59,8 @@ export default function GapMap({
   const containerRef = useRef(null);
   const mapRef = useRef(null);
   const popupRef = useRef(null);
+  const markerARef = useRef(null);
+  const markerBRef = useRef(null);
   const [activeBasemap, setActiveBasemap] = useState(currentBasemap || DEFAULT_BASEMAP);
   const [showBasemapPicker, setShowBasemapPicker] = useState(false);
   const [geeLiveStatus, setGeeLiveStatus] = useState(null);
@@ -145,6 +168,39 @@ export default function GapMap({
           'circle-color': '#db2777',
           'circle-stroke-width': 2.5,
           'circle-stroke-color': '#ffffff',
+        },
+      });
+    }
+
+    // 6. Selected Catchment Area Source & Layers
+    if (!map.getSource(SELECTED_AREA_SOURCE)) {
+      map.addSource(SELECTED_AREA_SOURCE, {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+    }
+
+    if (!map.getLayer(SELECTED_AREA_FILL)) {
+      map.addLayer({
+        id: SELECTED_AREA_FILL,
+        type: 'fill',
+        source: SELECTED_AREA_SOURCE,
+        paint: {
+          'fill-color': ['coalesce', ['get', 'color'], '#e11d48'],
+          'fill-opacity': 0.14,
+        },
+      });
+    }
+
+    if (!map.getLayer(SELECTED_AREA_STROKE)) {
+      map.addLayer({
+        id: SELECTED_AREA_STROKE,
+        type: 'line',
+        source: SELECTED_AREA_SOURCE,
+        paint: {
+          'line-color': ['coalesce', ['get', 'color'], '#e11d48'],
+          'line-width': 2.5,
+          'line-dasharray': [3, 2],
         },
       });
     }
@@ -444,6 +500,123 @@ export default function GapMap({
       map.once('style.load', updateLivePoint);
     }
   }, [livePoint]);
+
+  // Update Selected Location Pointer Pin & Catchment Area (1.5 km)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const updateAreaAndMarkers = () => {
+      const catchmentFeatures = [];
+
+      // 1. Primary Location (selectedLocation or livePoint)
+      const locA = selectedLocation || (livePoint?.lat ? { lat: livePoint.lat, lon: livePoint.lon, label: livePoint.label } : null);
+      if (locA?.lat && locA?.lon) {
+        // Add Catchment Circle Polygon (1.5 km radius)
+        const circleCoords = createCirclePolygon(locA.lon, locA.lat, 1.5);
+        catchmentFeatures.push({
+          type: 'Feature',
+          geometry: {
+            type: 'Polygon',
+            coordinates: [circleCoords],
+          },
+          properties: {
+            color: '#e11d48',
+            label: '1.5 km Catchment Area',
+          },
+        });
+
+        // Add or Update Pin A
+        if (!markerARef.current) {
+          const el = document.createElement('div');
+          el.className = 'custom-map-pin location-pin-a';
+          el.innerHTML = `
+            <div style="display: flex; flex-direction: column; align-items: center; transform: translate(-50%, -100%); cursor: pointer; pointer-events: none;">
+              <div style="background: #0f172a; color: white; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; white-space: nowrap; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.3); border: 1px solid #334155; margin-bottom: 3px; display: flex; align-items: center; gap: 4px;">
+                <span>📍</span>
+                <span id="pin-a-label">${locA.label || 'Selected Location'}</span>
+              </div>
+              <div style="width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, #e11d48, #4f46e5); display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 14px rgba(225,29,72,0.6); border: 2.5px solid white;">
+                <svg style="width: 18px; height: 18px; fill: white;" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
+              </div>
+              <div style="width: 8px; height: 8px; border-radius: 50%; background: #e11d48; margin-top: -3px; box-shadow: 0 0 8px #e11d48;"></div>
+            </div>
+          `;
+          markerARef.current = new maplibregl.Marker({ element: el })
+            .setLngLat([locA.lon, locA.lat])
+            .addTo(map);
+        } else {
+          markerARef.current.setLngLat([locA.lon, locA.lat]);
+          const lbl = document.getElementById('pin-a-label');
+          if (lbl) lbl.textContent = locA.label || 'Selected Location';
+        }
+      } else if (markerARef.current) {
+        markerARef.current.remove();
+        markerARef.current = null;
+      }
+
+      // 2. Compare Location B
+      const locB = compareLocation;
+      if (locB?.lat && locB?.lon) {
+        // Add Catchment Circle for Location B (1.5 km radius)
+        const circleCoordsB = createCirclePolygon(locB.lon, locB.lat, 1.5);
+        catchmentFeatures.push({
+          type: 'Feature',
+          geometry: {
+            type: 'Polygon',
+            coordinates: [circleCoordsB],
+          },
+          properties: {
+            color: '#059669',
+            label: 'Location B (1.5 km Catchment)',
+          },
+        });
+
+        // Add or Update Pin B
+        if (!markerBRef.current) {
+          const elB = document.createElement('div');
+          elB.className = 'custom-map-pin location-pin-b';
+          elB.innerHTML = `
+            <div style="display: flex; flex-direction: column; align-items: center; transform: translate(-50%, -100%); cursor: pointer; pointer-events: none;">
+              <div style="background: #064e3b; color: white; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; white-space: nowrap; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.3); border: 1px solid #059669; margin-bottom: 3px; display: flex; align-items: center; gap: 4px;">
+                <span>📍</span>
+                <span id="pin-b-label">${locB.label || 'Location B'}</span>
+              </div>
+              <div style="width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, #059669, #10b981); display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 14px rgba(5,150,105,0.6); border: 2.5px solid white;">
+                <svg style="width: 18px; height: 18px; fill: white;" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
+              </div>
+              <div style="width: 8px; height: 8px; border-radius: 50%; background: #059669; margin-top: -3px; box-shadow: 0 0 8px #059669;"></div>
+            </div>
+          `;
+          markerBRef.current = new maplibregl.Marker({ element: elB })
+            .setLngLat([locB.lon, locB.lat])
+            .addTo(map);
+        } else {
+          markerBRef.current.setLngLat([locB.lon, locB.lat]);
+          const lblB = document.getElementById('pin-b-label');
+          if (lblB) lblB.textContent = locB.label || 'Location B';
+        }
+      } else if (markerBRef.current) {
+        markerBRef.current.remove();
+        markerBRef.current = null;
+      }
+
+      // Update Catchment Area GeoJSON Source
+      const source = map.getSource(SELECTED_AREA_SOURCE);
+      if (source) {
+        source.setData({
+          type: 'FeatureCollection',
+          features: catchmentFeatures,
+        });
+      }
+    };
+
+    if (map.isStyleLoaded()) {
+      updateAreaAndMarkers();
+    } else {
+      map.once('style.load', updateAreaAndMarkers);
+    }
+  }, [selectedLocation, livePoint, compareLocation]);
 
   return (
     <div className="relative w-full h-full">
