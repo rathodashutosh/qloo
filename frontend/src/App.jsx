@@ -45,6 +45,7 @@ export default function App() {
   const [livePoint, setLivePoint] = useState(null);
   const [livePointData, setLivePointData] = useState(null);
   const [liveLoading, setLiveLoading] = useState(false);
+  const [mapFlyTarget, setMapFlyTarget] = useState(null);
 
   // API Key Management Modal State
   const [keyModalOpen, setKeyModalOpen] = useState(false);
@@ -75,6 +76,44 @@ export default function App() {
       }
     }
   }, [selectedCell?.id, selectedConcept, compareMode, loadCell, clearDetail]);
+
+  // Handle selecting Location A in Compare Mode (loads venues & taste tags)
+  const handleSelectCompareA = async (cell) => {
+    if (!cell) {
+      setSelectedCell(null);
+      return;
+    }
+    let full = { ...cell };
+    if (full.id && (!full.venues?.length || !full.tags?.length)) {
+      try {
+        const { fetchCellDetail: fetchDetailApi } = await import('./api/client');
+        const detail = await fetchDetailApi(full.id, selectedConcept);
+        full = { ...full, ...detail };
+      } catch (e) {
+        console.warn('Could not load cell A detail:', e);
+      }
+    }
+    setSelectedCell(full);
+  };
+
+  // Handle selecting Location B in Compare Mode (loads venues & taste tags)
+  const handleSelectCompareB = async (cell) => {
+    if (!cell) {
+      setCompareCell(null);
+      return;
+    }
+    let full = { ...cell };
+    if (full.id && (!full.venues?.length || !full.tags?.length)) {
+      try {
+        const { fetchCellDetail: fetchDetailApi } = await import('./api/client');
+        const detail = await fetchDetailApi(full.id, selectedConcept);
+        full = { ...full, ...detail };
+      } catch (e) {
+        console.warn('Could not load cell B detail:', e);
+      }
+    }
+    setCompareCell(full);
+  };
 
   // Handle cell click on map
   const handleCellClick = async (cellProps) => {
@@ -285,8 +324,31 @@ export default function App() {
           {/* Compare Mode Toggle */}
           <button
             onClick={() => {
-              setCompareMode(!compareMode);
-              if (compareMode) {
+              const nextMode = !compareMode;
+              setCompareMode(nextMode);
+              if (nextMode) {
+                if (livePoint && !selectedCell) {
+                  setSelectedCell({
+                    id: livePoint.id,
+                    lat: livePoint.lat,
+                    lon: livePoint.lon,
+                    label: livePoint.label,
+                    gap: livePoint.gap,
+                    demand: livePoint.demand,
+                    supply: livePoint.supply,
+                    confidence: livePoint.confidence,
+                    venues: livePointData?.venues || livePoint.venues || [],
+                    taste_tags: livePointData?.taste_tags || livePoint.taste_tags || [],
+                  });
+                  setLivePoint(null);
+                  setLivePointData(null);
+                  setActiveCompareSlot('B');
+                } else if (selectedCell) {
+                  setActiveCompareSlot('B');
+                } else {
+                  setActiveCompareSlot('A');
+                }
+              } else {
                 setCompareCell(null);
               }
             }}
@@ -345,12 +407,12 @@ export default function App() {
                   conceptId={selectedConcept}
                   city={selectedCity}
                   allCells={allCellsList}
-                  onSelectCellA={setSelectedCell}
-                  onSelectCellB={setCompareCell}
+                  onSelectCellA={handleSelectCompareA}
+                  onSelectCellB={handleSelectCompareB}
                   activeSlot={activeCompareSlot}
                   onSelectSlot={setActiveCompareSlot}
                   onFlyTo={(lat, lon) => {
-                    // map centers automatically
+                    setMapFlyTarget({ lat, lon, time: Date.now() });
                   }}
                   onClose={() => {
                     setCompareMode(false);
@@ -403,9 +465,17 @@ export default function App() {
           {/* Chat Assistant at bottom of sidebar — adjustable height with presets */}
           <div className="border-t border-slate-200 p-2.5 bg-slate-50/80 shrink-0">
             <ChatBox
-              cellId={selectedCell?.id || (livePoint ? `coord_${livePoint.lat.toFixed(4)}` : undefined)}
+              cellId={
+                selectedCell?.id ||
+                (livePoint ? `coord_${livePoint.lat.toFixed(4)}_${livePoint.lon.toFixed(4)}` : undefined)
+              }
               conceptId={selectedConcept}
               city={selectedCity}
+              locationData={
+                livePointData
+                  ? { ...livePointData, lat: livePoint?.lat, lon: livePoint?.lon, label: livePoint?.label }
+                  : selectedCell || cellData
+              }
             />
           </div>
         </aside>
@@ -432,6 +502,7 @@ export default function App() {
             compareMode={compareMode}
             venueMarkers={venueMarkers}
             livePoint={livePoint}
+            mapFlyTarget={mapFlyTarget}
             onCellClick={handleCellClick}
             onLivePointClick={handleLivePointClick}
           />

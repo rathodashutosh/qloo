@@ -29,7 +29,9 @@ class Settings(BaseSettings):
     # H3 grid
     H3_RESOLUTION: int = 7  # avg edge ~1.2km
 
-    # OpenAI / LLM
+    # AI / LLM
+    GEMINI_API_KEY: str = ""
+    GEMINI_MODEL: str = "gemini-2.5-flash"
     OPENAI_MODEL: str = "gpt-4o-mini"
 
     # Server

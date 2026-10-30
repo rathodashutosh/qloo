@@ -17,7 +17,7 @@ import {
 /**
  * ChatBox — adjustable, resizable chat assistant for location intelligence questions.
  */
-export default function ChatBox({ cellId, conceptId, city }) {
+export default function ChatBox({ cellId, conceptId, city, locationData }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -73,6 +73,15 @@ export default function ChatBox({ cellId, conceptId, city }) {
         cell_id: cellId,
         concept_id: conceptId,
         city,
+        lat: locationData?.lat,
+        lon: locationData?.lon,
+        cell_label: locationData?.label,
+        demand: locationData?.demand,
+        supply: locationData?.supply,
+        gap: locationData?.gap,
+        venue_count: locationData?.venues?.length ?? locationData?.venue_count,
+        venues: locationData?.venues?.slice(0, 20),
+        taste_tags: locationData?.taste_tags || locationData?.tags,
       });
 
       const botMessage = {

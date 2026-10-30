@@ -4,6 +4,7 @@ import json
 import logging
 
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 from db import database
 from models import ReportRequest, ReportResponse
 from services.llm import generate_report
@@ -145,3 +146,29 @@ async def create_report(req: ReportRequest):
         report=report_text,
         structured_data=structured_data,
     )
+
+
+class CompareReportRequest(BaseModel):
+    cell_a: dict
+    cell_b: dict
+    concept_id: str
+    city: str
+
+
+@router.post("/compare-report")
+async def create_compare_report(req: CompareReportRequest):
+    """Generate a Gemini-powered head-to-head comparison brief."""
+    from services.llm import generate_comparison_report
+
+    concept_row = await database.fetch_one(
+        "SELECT name FROM concepts WHERE id = :id", values={"id": req.concept_id}
+    )
+    concept_name = concept_row["name"] if concept_row else req.concept_id.replace("-", " ").title()
+
+    brief = await generate_comparison_report(
+        cell_a=req.cell_a,
+        cell_b=req.cell_b,
+        concept_name=concept_name,
+        city=req.city,
+    )
+    return {"report_text": brief, "report": brief}

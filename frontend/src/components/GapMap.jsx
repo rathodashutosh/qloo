@@ -67,6 +67,7 @@ export default function GapMap({
   compareMode = false,
   venueMarkers,
   livePoint,
+  mapFlyTarget,
   onCellClick,
   onLivePointClick,
 }) {
@@ -85,6 +86,18 @@ export default function GapMap({
   useEffect(() => {
     onLivePointClickRef.current = onLivePointClick;
   }, [onLivePointClick]);
+
+  // Smooth flyTo when user clicks "Focus map"
+  useEffect(() => {
+    if (mapFlyTarget?.lat && mapFlyTarget?.lon && mapRef.current) {
+      mapRef.current.flyTo({
+        center: [mapFlyTarget.lon, mapFlyTarget.lat],
+        zoom: 13.5,
+        essential: true,
+        duration: 1000,
+      });
+    }
+  }, [mapFlyTarget]);
 
   // Markers
   const pointerPrimaryRef = useRef(null);
@@ -389,24 +402,37 @@ export default function GapMap({
 
     // Determine target location for Primary Pointer (Location A / Selected Cell / Live Point)
     let primaryTarget = null;
-    if (livePoint?.lat && livePoint?.lon) {
-      primaryTarget = {
-        lat: livePoint.lat,
-        lon: livePoint.lon,
-        label: livePoint.label || `Live Point (${livePoint.lat.toFixed(4)}, ${livePoint.lon.toFixed(4)})`,
-        color: '#ec4899',
-        pulseColor: 'rgba(236, 72, 153, 0.4)',
-        letter: compareMode ? 'A' : null,
-      };
-    } else if (selectedCell?.lat && selectedCell?.lon) {
-      primaryTarget = {
-        lat: selectedCell.lat,
-        lon: selectedCell.lon,
-        label: selectedCell.label || `Selected Area (${selectedCell.lat.toFixed(4)}, ${selectedCell.lon.toFixed(4)})`,
-        color: '#4f46e5',
-        pulseColor: 'rgba(79, 70, 229, 0.4)',
-        letter: compareMode ? 'A' : null,
-      };
+    if (compareMode) {
+      if (selectedCell?.lat && selectedCell?.lon) {
+        primaryTarget = {
+          lat: selectedCell.lat,
+          lon: selectedCell.lon,
+          label: selectedCell.label || `Location A (${selectedCell.lat.toFixed(4)}, ${selectedCell.lon.toFixed(4)})`,
+          color: '#4f46e5',
+          pulseColor: 'rgba(79, 70, 229, 0.4)',
+          letter: 'A',
+        };
+      }
+    } else {
+      if (livePoint?.lat && livePoint?.lon) {
+        primaryTarget = {
+          lat: livePoint.lat,
+          lon: livePoint.lon,
+          label: livePoint.label || `Live Point (${livePoint.lat.toFixed(4)}, ${livePoint.lon.toFixed(4)})`,
+          color: '#ec4899',
+          pulseColor: 'rgba(236, 72, 153, 0.4)',
+          letter: null,
+        };
+      } else if (selectedCell?.lat && selectedCell?.lon) {
+        primaryTarget = {
+          lat: selectedCell.lat,
+          lon: selectedCell.lon,
+          label: selectedCell.label || `Selected Area (${selectedCell.lat.toFixed(4)}, ${selectedCell.lon.toFixed(4)})`,
+          color: '#4f46e5',
+          pulseColor: 'rgba(79, 70, 229, 0.4)',
+          letter: null,
+        };
+      }
     }
 
     if (primaryTarget) {
@@ -444,78 +470,118 @@ export default function GapMap({
 
       const features = [];
 
-      // 1. Live Point Circle (1.5 km Catchment Area)
-      if (livePoint?.lat && livePoint?.lon) {
-        const circleCoords = circleVertices(livePoint.lat, livePoint.lon, 1.5);
-        features.push({
-          type: 'Feature',
-          geometry: {
-            type: 'Polygon',
-            coordinates: [circleCoords],
-          },
-          properties: {
-            id: 'live-area',
-            color: '#ec4899',
-            label: 'Catchment: 1.5 km Radius',
-          },
-        });
-      }
+      if (!compareMode) {
+        // 1. Live Point Circle (1.5 km Catchment Area) in non-compare mode
+        if (livePoint?.lat && livePoint?.lon) {
+          const circleCoords = circleVertices(livePoint.lat, livePoint.lon, 1.5);
+          features.push({
+            type: 'Feature',
+            geometry: {
+              type: 'Polygon',
+              coordinates: [circleCoords],
+            },
+            properties: {
+              id: 'live-area',
+              color: '#ec4899',
+              label: 'Catchment: 1.5 km Radius',
+            },
+          });
+        } else if (selectedCell?.lat && selectedCell?.lon) {
+          let cellPolygon = null;
+          if (selectedCell.geometry) {
+            cellPolygon = selectedCell.geometry;
+          } else if (geojson?.features) {
+            const matched = geojson.features.find(
+              (f) => f.properties?.id === selectedCell.id || f.properties?.cell_id === selectedCell.id
+            );
+            if (matched) cellPolygon = matched.geometry;
+          }
 
-      // 2. Selected Cell Hexagon Polygon (Location A)
-      if (selectedCell?.lat && selectedCell?.lon) {
-        // Try to find matching geometry in geojson
-        let cellPolygon = null;
-        if (selectedCell.geometry) {
-          cellPolygon = selectedCell.geometry;
-        } else if (geojson?.features) {
-          const matched = geojson.features.find(
-            (f) => f.properties?.id === selectedCell.id || f.properties?.cell_id === selectedCell.id
-          );
-          if (matched) cellPolygon = matched.geometry;
+          if (!cellPolygon) {
+            if (selectedCell.id?.startsWith('live_') || selectedCell.id?.startsWith('coord_')) {
+              const circleCoords = circleVertices(selectedCell.lat, selectedCell.lon, 1.5);
+              cellPolygon = { type: 'Polygon', coordinates: [circleCoords] };
+            } else {
+              const hexCoords = hexagonVertices(selectedCell.lat, selectedCell.lon, selectedCell.radius_km || 1.2);
+              cellPolygon = { type: 'Polygon', coordinates: [hexCoords] };
+            }
+          }
+
+          features.push({
+            type: 'Feature',
+            geometry: cellPolygon,
+            properties: {
+              id: selectedCell.id || 'cell-a-area',
+              color: '#4f46e5',
+              label: selectedCell.label || 'Selected Hexagon',
+            },
+          });
+        }
+      } else {
+        // In Compare Mode: Draw Location A (Indigo) and Location B (Emerald)
+        if (selectedCell?.lat && selectedCell?.lon) {
+          let cellPolygon = null;
+          if (selectedCell.geometry) {
+            cellPolygon = selectedCell.geometry;
+          } else if (geojson?.features) {
+            const matched = geojson.features.find(
+              (f) => f.properties?.id === selectedCell.id || f.properties?.cell_id === selectedCell.id
+            );
+            if (matched) cellPolygon = matched.geometry;
+          }
+
+          if (!cellPolygon) {
+            if (selectedCell.id?.startsWith('live_') || selectedCell.id?.startsWith('coord_')) {
+              const circleCoords = circleVertices(selectedCell.lat, selectedCell.lon, 1.5);
+              cellPolygon = { type: 'Polygon', coordinates: [circleCoords] };
+            } else {
+              const hexCoords = hexagonVertices(selectedCell.lat, selectedCell.lon, selectedCell.radius_km || 1.2);
+              cellPolygon = { type: 'Polygon', coordinates: [hexCoords] };
+            }
+          }
+
+          features.push({
+            type: 'Feature',
+            geometry: cellPolygon,
+            properties: {
+              id: selectedCell.id || 'cell-a-area',
+              color: '#4f46e5',
+              label: selectedCell.label || 'Location A',
+            },
+          });
         }
 
-        if (!cellPolygon) {
-          const hexCoords = hexagonVertices(selectedCell.lat, selectedCell.lon, selectedCell.radius_km || 1.2);
-          cellPolygon = { type: 'Polygon', coordinates: [hexCoords] };
+        if (compareCell?.lat && compareCell?.lon) {
+          let cellPolygon = null;
+          if (compareCell.geometry) {
+            cellPolygon = compareCell.geometry;
+          } else if (geojson?.features) {
+            const matched = geojson.features.find(
+              (f) => f.properties?.id === compareCell.id || f.properties?.cell_id === compareCell.id
+            );
+            if (matched) cellPolygon = matched.geometry;
+          }
+
+          if (!cellPolygon) {
+            if (compareCell.id?.startsWith('live_') || compareCell.id?.startsWith('coord_')) {
+              const circleCoords = circleVertices(compareCell.lat, compareCell.lon, 1.5);
+              cellPolygon = { type: 'Polygon', coordinates: [circleCoords] };
+            } else {
+              const hexCoords = hexagonVertices(compareCell.lat, compareCell.lon, compareCell.radius_km || 1.2);
+              cellPolygon = { type: 'Polygon', coordinates: [hexCoords] };
+            }
+          }
+
+          features.push({
+            type: 'Feature',
+            geometry: cellPolygon,
+            properties: {
+              id: compareCell.id || 'cell-b-area',
+              color: '#059669',
+              label: compareCell.label || 'Location B',
+            },
+          });
         }
-
-        features.push({
-          type: 'Feature',
-          geometry: cellPolygon,
-          properties: {
-            id: selectedCell.id || 'cell-a-area',
-            color: '#4f46e5',
-            label: selectedCell.label || 'Selected Hexagon',
-          },
-        });
-      }
-
-      // 3. Compare Cell Hexagon Polygon (Location B)
-      if (compareMode && compareCell?.lat && compareCell?.lon) {
-        let cellPolygon = null;
-        if (compareCell.geometry) {
-          cellPolygon = compareCell.geometry;
-        } else if (geojson?.features) {
-          const matched = geojson.features.find(
-            (f) => f.properties?.id === compareCell.id || f.properties?.cell_id === compareCell.id
-          );
-          if (matched) cellPolygon = matched.geometry;
-        }
-
-        if (!cellPolygon) {
-          const hexCoords = hexagonVertices(compareCell.lat, compareCell.lon, compareCell.radius_km || 1.2);
-          cellPolygon = { type: 'Polygon', coordinates: [hexCoords] };
-        }
-
-        features.push({
-          type: 'Feature',
-          geometry: cellPolygon,
-          properties: {
-            id: compareCell.id || 'cell-b-area',
-            color: '#059669',
-            label: compareCell.label || 'Compare Hexagon B',
-          },
-        });
       }
 
       source.setData({

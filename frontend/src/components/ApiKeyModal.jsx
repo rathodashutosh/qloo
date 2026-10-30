@@ -4,6 +4,7 @@ import { Key, Upload, CheckCircle2, AlertCircle, X, Shield, RefreshCw } from 'lu
 
 export default function ApiKeyModal({ isOpen, onClose, onKeysUpdated }) {
   const [qlooKey, setQlooKey] = useState('');
+  const [geminiKey, setGeminiKey] = useState('');
   const [openaiKey, setOpenaiKey] = useState('');
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState(null);
@@ -22,7 +23,7 @@ export default function ApiKeyModal({ isOpen, onClose, onKeysUpdated }) {
 
   const handleSave = async (e) => {
     e.preventDefault();
-    if (!qlooKey.trim() && !openaiKey.trim()) return;
+    if (!qlooKey.trim() && !geminiKey.trim() && !openaiKey.trim()) return;
 
     setLoading(true);
     setResultMessage(null);
@@ -31,6 +32,7 @@ export default function ApiKeyModal({ isOpen, onClose, onKeysUpdated }) {
     try {
       const res = await updateApiKeys({
         qlooApiKey: qlooKey.trim() || undefined,
+        geminiApiKey: geminiKey.trim() || undefined,
         openaiApiKey: openaiKey.trim() || undefined,
       });
 
@@ -84,7 +86,7 @@ export default function ApiKeyModal({ isOpen, onClose, onKeysUpdated }) {
         <div className="px-6 py-4 bg-gradient-to-r from-indigo-600 to-violet-600 text-white flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Key className="h-5 w-5 text-indigo-200" />
-            <h3 className="font-semibold text-base">Configure Qloo & LLM API Keys</h3>
+            <h3 className="font-semibold text-base">Configure Qloo & Gemini AI Keys</h3>
           </div>
           <button
             onClick={onClose}
@@ -95,61 +97,75 @@ export default function ApiKeyModal({ isOpen, onClose, onKeysUpdated }) {
         </div>
 
         {/* Content */}
-        <div className="p-6 space-y-5">
+        <div className="p-6 space-y-4">
           {/* Status summary */}
-          <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs flex items-center justify-between">
-            <div>
-              <span className="text-slate-500 font-medium">Qloo Status: </span>
-              {status?.qloo_configured ? (
-                <span className="text-emerald-700 font-semibold inline-flex items-center gap-1">
-                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
-                  Active ({status.qloo_key_preview})
-                </span>
-              ) : (
-                <span className="text-amber-700 font-semibold inline-flex items-center gap-1">
-                  <AlertCircle className="h-3.5 w-3.5 text-amber-600" />
-                  Key Needed
-                </span>
-              )}
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs space-y-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-slate-500 font-medium">Qloo Taste API: </span>
+                {status?.qloo_configured ? (
+                  <span className="text-emerald-700 font-semibold inline-flex items-center gap-1">
+                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                    Active ({status.qloo_key_preview})
+                  </span>
+                ) : (
+                  <span className="text-amber-700 font-semibold inline-flex items-center gap-1">
+                    <AlertCircle className="h-3.5 w-3.5 text-amber-600" />
+                    Key Needed
+                  </span>
+                )}
+              </div>
+              <span className="text-slate-400 text-[10px]">hackathon.api.qloo.com</span>
             </div>
-            <div className="text-slate-400 text-[11px]">
-              Base: <code className="bg-slate-200 px-1 py-0.5 rounded text-slate-700">hackathon.api.qloo.com</code>
+            <div className="flex items-center justify-between pt-1 border-t border-slate-200/60">
+              <div>
+                <span className="text-slate-500 font-medium">Gemini 2.5 Flash: </span>
+                {status?.gemini_configured ? (
+                  <span className="text-emerald-700 font-semibold inline-flex items-center gap-1">
+                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                    Integrated ({status.gemini_key_preview})
+                  </span>
+                ) : (
+                  <span className="text-amber-700 font-semibold inline-flex items-center gap-1">
+                    <AlertCircle className="h-3.5 w-3.5 text-amber-600" />
+                    Optional / Key Needed
+                  </span>
+                )}
+              </div>
+              <span className="text-slate-400 text-[10px]">AI Location Analyst</span>
             </div>
           </div>
 
           {/* Form */}
-          <form onSubmit={handleSave} className="space-y-4">
+          <form onSubmit={handleSave} className="space-y-3.5">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Qloo API Key <span className="text-red-500">*</span>
+                Qloo API Key
               </label>
               <div className="relative">
                 <input
                   type="password"
-                  placeholder="Paste your Qloo hackathon API key here..."
+                  placeholder="hack_..."
                   value={qlooKey}
                   onChange={(e) => setQlooKey(e.target.value)}
-                  className="w-full text-xs px-3 py-2.5 rounded-lg border border-slate-300 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono"
+                  className="w-full text-xs px-3 py-2 rounded-lg border border-slate-300 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono"
                 />
               </div>
-              <p className="text-[10px] text-slate-400 mt-1">
-                Used with <code>X-Api-Key</code> for real-time taste signals and affinity scoring.
-              </p>
             </div>
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
-                OpenAI API Key <span className="text-slate-400 font-normal">(Optional)</span>
+                Google Gemini API Key
               </label>
               <input
                 type="password"
-                placeholder="sk-..."
-                value={openaiKey}
-                onChange={(e) => setOpenaiKey(e.target.value)}
-                className="w-full text-xs px-3 py-2.5 rounded-lg border border-slate-300 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono"
+                placeholder="AQ... or AIza..."
+                value={geminiKey}
+                onChange={(e) => setGeminiKey(e.target.value)}
+                className="w-full text-xs px-3 py-2 rounded-lg border border-slate-300 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono"
               />
-              <p className="text-[10px] text-slate-400 mt-1">
-                If omitted, the app uses its built-in analytical brief generator.
+              <p className="text-[10px] text-slate-400 mt-0.5">
+                Powers AI Location Analyst chat, custom location briefs, and head-to-head comparison reports.
               </p>
             </div>
 

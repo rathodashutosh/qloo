@@ -15,7 +15,7 @@ import {
   ChevronRight,
   Compass
 } from 'lucide-react';
-import { generateReport } from '../api/client';
+import { generateReport, generateCompareReport } from '../api/client';
 import LoadingSpinner from './LoadingSpinner';
 
 /**
@@ -96,18 +96,21 @@ export default function CompareView({
     return { ...cellB, gap, demand, supply, confidence, label, tags, venues };
   }, [cellB]);
 
-  // Handle generating comparative brief
+  // Handle generating comparative brief via Gemini AI
   const handleGenerateComparison = async () => {
     if (!dataA || !dataB) return;
     setBriefLoading(true);
     setBriefError(null);
     try {
-      // Generate brief for the primary winner or comparison
-      const [resA, resB] = await Promise.all([
-        generateReport(dataA.id || `live_${dataA.lat.toFixed(4)}_${dataA.lon.toFixed(4)}`, conceptId, city),
-        generateReport(dataB.id || `live_${dataB.lat.toFixed(4)}_${dataB.lon.toFixed(4)}`, conceptId, city),
-      ]);
-
+      const res = await generateCompareReport(dataA, dataB, conceptId, city);
+      if (res?.report_text || res?.report) {
+        setComparisonBrief(res.report_text || res.report);
+        setActiveTab('brief');
+        return;
+      }
+      throw new Error('No brief returned from server');
+    } catch (err) {
+      console.warn('AI comparison API failed, using structured evaluation:', err);
       const winner = dataA.gap >= dataB.gap ? 'A' : 'B';
       const gapDiff = Math.abs(dataA.gap - dataB.gap).toFixed(2);
       const winnerName = winner === 'A' ? dataA.label : dataB.label;
@@ -129,8 +132,6 @@ Local affinities in ${dataA.label} lean heavily into *${dataA.tags.slice(0, 4).j
 
       setComparisonBrief(summary);
       setActiveTab('brief');
-    } catch (err) {
-      setBriefError(err.message || 'Failed to generate comparison');
     } finally {
       setBriefLoading(false);
     }

@@ -245,19 +245,20 @@ async def chat_endpoint(req: ChatRequest):
     concept_name = concept_row["name"] if concept_row else concept_id.replace("-", " ").title()
     context["concept_name"] = concept_name
 
-    lat = None
-    lon = None
-    cell_label = cell_id
+    lat = context.get("lat")
+    lon = context.get("lon")
+    cell_label = context.get("cell_label") or cell_id
 
     # Check if cell_id is a coordinate
-    if cell_id:
-        coord_match = re.search(r"[-+]?\d*\.\d+", cell_id)
+    if (lat is None or lon is None) and cell_id:
         if "coord_" in cell_id or "live_" in cell_id:
-            parts = re.findall(r"[-+]?\d+\.\d+", cell_id)
+            parts = re.findall(r"[-+]?\d+\.?\d*", cell_id)
             if len(parts) >= 2:
                 lat = float(parts[0])
                 lon = float(parts[1])
                 cell_label = f"Selected Area ({parts[0]}, {parts[1]})"
+            elif len(parts) == 1:
+                lat = float(parts[0])
 
     # If not a live coordinate, fetch from DB
     if lat is None and cell_id:
@@ -271,9 +272,9 @@ async def chat_endpoint(req: ChatRequest):
     context["lat"] = lat
     context["lon"] = lon
 
-    # Fetch venues within 1.5 km of target location
-    venues_list = []
-    if lat is not None and lon is not None:
+    # Venues: use provided context venues if already present, or query within 1.6 km
+    venues_list = context.get("venues") or []
+    if not venues_list and lat is not None and lon is not None:
         all_venues = await database.fetch_all(
             "SELECT osm_id, name, lat, lon FROM venues WHERE concept_id = :cid",
             values={"cid": concept_id},
@@ -283,25 +284,26 @@ async def chat_endpoint(req: ChatRequest):
             if dist <= 1.6:
                 venues_list.append(dict(v))
 
-    context["venue_count"] = len(venues_list)
+    context["venue_count"] = len(venues_list) if venues_list else context.get("venue_count", 0)
     context["venues"] = venues_list
 
-    # Fetch scores
-    if cell_id:
-        score = await database.fetch_one(
-            "SELECT demand, supply, gap, confidence, qloo_payload_json FROM scores WHERE cell_id = :id AND concept_id = :cid",
-            values={"id": cell_id, "cid": concept_id},
-        )
-        if score:
-            context["demand"] = score["demand"]
-            context["supply"] = score["supply"]
-            context["gap"] = score["gap"]
-            context["confidence"] = score["confidence"]
-        else:
-            # Dynamic estimate for live points
-            context["demand"] = 0.68
+    # Scores
+    if context.get("demand") is None:
+        if cell_id:
+            score = await database.fetch_one(
+                "SELECT demand, supply, gap, confidence, qloo_payload_json FROM scores WHERE cell_id = :id AND concept_id = :cid",
+                values={"id": cell_id, "cid": concept_id},
+            )
+            if score:
+                context["demand"] = score["demand"]
+                context["supply"] = score["supply"]
+                context["gap"] = score["gap"]
+                context["confidence"] = score["confidence"]
+        if context.get("demand") is None:
+            context["demand"] = 0.72
             context["supply"] = min(1.0, len(venues_list) / 6.0)
-            context["gap"] = context["demand"] * (1.0 - context["supply"])
+            context["gap"] = round(context["demand"] * (1.0 - context["supply"]), 3)
 
     response_text = await llm_chat(message=req.message, context=context)
     return ChatResponse(response=response_text)
+

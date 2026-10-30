@@ -1,6 +1,7 @@
 """LLM service for generating narrative reports and chat responses."""
 
 import logging
+import httpx
 from openai import AsyncOpenAI
 
 from config import get_settings
@@ -21,14 +22,64 @@ Rules:
 - Be specific, analytical, and actionable
 - Keep it under 350 words"""
 
-SYSTEM_PROMPT_CHAT = """You are a location intelligence analyst assistant for the Taste-Gap Finder tool. You help entrepreneurs and real-estate advisors find prime locations to open cafes, bars, and venues.
+SYSTEM_PROMPT_CHAT = """You are a senior location intelligence analyst assistant for the Taste-Gap Finder tool. You help entrepreneurs and real-estate advisors find prime locations to open cafes, bars, and venues.
 You analyze demand scores (0-1 from Qloo taste data), supply saturation (0-1 from OpenStreetMap), and gap scores (Demand × [1 - Supply]).
 
 Rules:
-- Only reference data that has been provided in the context
-- Never invent numbers or venue names
-- Be concise, professional, and practical
-- If the user asks for suggestions or comparisons, highlight high-gap areas with low competition"""
+- Ground your answers directly in the real context provided (exact venue names, venue count, demand and gap scores, and Qloo taste tags).
+- If the user asks for venue or restaurant counts, report the exact count and list the competitor names provided in the context.
+- Be concise, professional, and practical.
+- Never invent numbers or venue names not present in the provided context."""
+
+SYSTEM_PROMPT_COMPARE = """You are a senior real estate and taste-intelligence advisor. You are performing a head-to-head location comparison between Location A and Location B for opening a new commercial concept.
+Analyze:
+1. Executive Verdict & Winner (Which location to open first and why)
+2. Strategic Opportunity Analysis (Demand vs Supply gap comparison)
+3. Taste & Demographic Alignment (Contrasting consumer culture & affinities)
+4. Competitor Dynamics & Whitespace (Existing saturation and positioning strategy)
+5. Expansion Roadmap (Phase 1 launch recommendation vs Phase 2 expansion)
+
+Format with clean Markdown headings and bullet points. Never hallucinate fake venues or metrics beyond what is given."""
+
+
+async def _call_gemini(system_prompt: str, user_prompt: str, max_tokens: int = 900) -> str | None:
+    """Call Google Gemini 2.5 Flash via REST API using configured GEMINI_API_KEY."""
+    api_key = settings.GEMINI_API_KEY
+    if not api_key or api_key.startswith("your-") or api_key.strip() == "":
+        return None
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{settings.GEMINI_MODEL}:generateContent?key={api_key.strip()}"
+    payload = {
+        "contents": [
+            {
+                "role": "user",
+                "parts": [{"text": f"SYSTEM INSTRUCTIONS:\n{system_prompt}\n\nUSER PROMPT:\n{user_prompt}"}],
+            }
+        ],
+        "generationConfig": {
+            "temperature": 0.7,
+            "maxOutputTokens": max(max_tokens, 2048),
+            "thinkingConfig": {"thinkingBudget": 0},
+        },
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=25.0) as client:
+            resp = await client.post(url, json=payload)
+            if resp.status_code == 200:
+                data = resp.json()
+                candidates = data.get("candidates", [])
+                if candidates:
+                    parts = candidates[0].get("content", {}).get("parts", [])
+                    if parts:
+                        text = parts[0].get("text", "").strip()
+                        if text:
+                            logger.info("Successfully received Gemini response (%d chars)", len(text))
+                            return text
+            logger.warning("Gemini API error (HTTP %s): %s", resp.status_code, resp.text[:200])
+    except Exception as exc:
+        logger.warning("Gemini API call failed (%s)", exc)
+    return None
 
 
 def _get_client() -> AsyncOpenAI | None:
@@ -171,20 +222,9 @@ async def generate_report(
     taste_tags: list[str],
     venues: list[dict],
 ) -> str:
-    """Generate a narrative business brief using LLM or structured fallback."""
-    client = _get_client()
-    if client is None:
-        logger.info("OpenAI API key not configured, using structured analytical brief generator.")
-        return _generate_analytical_brief(
-            concept_name, cell_label, demand, supply, gap, confidence, venue_count, taste_tags, venues
-        )
-
-    venue_list_text = ""
-    if venues:
-        venue_names = [v.get("name", "Unnamed") for v in venues[:12] if v.get("name")]
-        venue_list_text = "\n".join(f"  - {n}" for n in venue_names)
-    else:
-        venue_list_text = "  (no direct competitor venues recorded)"
+    """Generate a narrative business brief using Gemini, OpenAI, or structured fallback."""
+    venue_names = [v.get("name", "Unnamed") for v in venues[:12] if isinstance(v, dict) and v.get("name")]
+    venue_list_text = "\n".join(f"  - {n}" for n in venue_names) if venue_names else "  (no direct competitor venues recorded)"
 
     user_message = f"""## Area Analysis: {concept_name} in {cell_label}
 
@@ -195,66 +235,179 @@ async def generate_report(
 
 **Top taste tags in this area**: {', '.join(taste_tags) if taste_tags else 'N/A'}
 
-**Existing competitor venues**:
+**Existing competitor venues ({venue_count} total)**:
 {venue_list_text}
 
 Write a comprehensive business brief for opening a {concept_name} in {cell_label}."""
 
-    try:
-        logger.info("Generating LLM report via OpenAI for %s in %s", concept_name, cell_label)
-        response = await client.chat.completions.create(
-            model=settings.OPENAI_MODEL,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT_REPORT},
-                {"role": "user", "content": user_message},
-            ],
-            temperature=0.7,
-            max_tokens=650,
-        )
-        return response.choices[0].message.content or ""
-    except Exception as exc:
-        logger.warning("OpenAI API call failed (%s); falling back to analytical brief generator.", exc)
-        return _generate_analytical_brief(
-            concept_name, cell_label, demand, supply, gap, confidence, venue_count, taste_tags, venues
-        )
+    # 1. Try Gemini
+    gemini_resp = await _call_gemini(SYSTEM_PROMPT_REPORT, user_message, max_tokens=850)
+    if gemini_resp:
+        logger.info("Generated brief via Gemini AI for %s in %s", concept_name, cell_label)
+        return gemini_resp
+
+    # 2. Try OpenAI
+    client = _get_client()
+    if client is not None:
+        try:
+            logger.info("Generating report via OpenAI for %s in %s", concept_name, cell_label)
+            response = await client.chat.completions.create(
+                model=settings.OPENAI_MODEL,
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT_REPORT},
+                    {"role": "user", "content": user_message},
+                ],
+                temperature=0.7,
+                max_tokens=650,
+            )
+            return response.choices[0].message.content or ""
+        except Exception as exc:
+            logger.warning("OpenAI API call failed (%s); falling back to analytical brief generator.", exc)
+
+    # 3. Fallback to analytical template
+    logger.info("Using structured analytical brief generator.")
+    return _generate_analytical_brief(
+        concept_name, cell_label, demand, supply, gap, confidence, venue_count, taste_tags, venues
+    )
 
 
 async def chat(
     message: str,
     context: dict | None = None,
 ) -> str:
-    """Handle chat messages with optional data context."""
+    """Handle chat messages with optional data context via Gemini or OpenAI."""
     context = context or {}
+
+    venue_count = context.get("venue_count", 0)
+    venues = context.get("venues", [])
+    venue_names = []
+    if isinstance(venues, list):
+        for v in venues:
+            if isinstance(v, dict) and v.get("name"):
+                venue_names.append(v["name"])
+            elif isinstance(v, str):
+                venue_names.append(v)
+
+    venue_summary = f"{venue_count} venues detected ({', '.join(venue_names[:10])})" if venue_names else f"{venue_count} venues detected"
+    tags = context.get("taste_tags") or context.get("tags") or []
+    tags_text = ", ".join(tags[:12]) if tags else "N/A"
+    cell_label = context.get("cell_label") or context.get("cell_id") or "Selected Location"
+    concept = context.get("concept_name") or context.get("concept_id") or "Commercial Concept"
+    city = context.get("city") or "Current City"
+
+    context_text = f"""- Location: {cell_label} in {city}
+- Target Concept: {concept}
+- Opportunity Gap Score: {context.get('gap', 0.45):.2f} (Demand: {((context.get('demand') or 0.65)*100):.0f}%, Supply Saturation: {((context.get('supply') or 0.35)*100):.0f}%)
+- Existing Competitors within 1.5 km: {venue_summary}
+- Top Qloo Consumer Taste Signals: {tags_text}"""
+
+    user_message = f"Grounded Context Data:\n{context_text}\n\nUser Question: {message}"
+
+    # 1. Try Gemini
+    gemini_resp = await _call_gemini(SYSTEM_PROMPT_CHAT, user_message, max_tokens=650)
+    if gemini_resp:
+        logger.info("Responded via Gemini AI for chat query: %s", message[:60])
+        return gemini_resp
+
+    # 2. Try OpenAI
     client = _get_client()
+    if client is not None:
+        try:
+            logger.info("Calling OpenAI chat completion for query: %s", message[:60])
+            response = await client.chat.completions.create(
+                model=settings.OPENAI_MODEL,
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT_CHAT},
+                    {"role": "user", "content": user_message},
+                ],
+                temperature=0.7,
+                max_tokens=500,
+            )
+            return response.choices[0].message.content or ""
+        except Exception as exc:
+            logger.warning("OpenAI chat failed (%s); using fallback response.", exc)
 
-    if client is None:
-        return _generate_chat_fallback(message, context)
+    # 3. Fallback
+    return _generate_chat_fallback(message, context)
 
-    context_parts = []
-    if context.get("city"):
-        context_parts.append(f"City: {context['city']}")
-    if context.get("concept_id"):
-        context_parts.append(f"Current concept: {context['concept_id']}")
-    if context.get("cell_id"):
-        context_parts.append(f"Current cell: {context['cell_id']}")
-    if context.get("data"):
-        context_parts.append(f"Data context:\n{context['data']}")
 
-    context_text = "\n".join(context_parts) if context_parts else "No specific context."
-    user_message = f"Context:\n{context_text}\n\nUser question: {message}"
+async def generate_comparison_report(
+    cell_a: dict,
+    cell_b: dict,
+    concept_name: str,
+    city: str,
+) -> str:
+    """Generate an AI-powered head-to-head comparison brief between two locations."""
+    label_a = cell_a.get("label") or cell_a.get("id") or "Location A"
+    label_b = cell_b.get("label") or cell_b.get("id") or "Location B"
 
-    try:
-        logger.info("Calling OpenAI chat completion for query: %s", message[:80])
-        response = await client.chat.completions.create(
-            model=settings.OPENAI_MODEL,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT_CHAT},
-                {"role": "user", "content": user_message},
-            ],
-            temperature=0.7,
-            max_tokens=500,
-        )
-        return response.choices[0].message.content or ""
-    except Exception as exc:
-        logger.warning("OpenAI chat failed (%s); using fallback response.", exc)
-        return _generate_chat_fallback(message, context)
+    gap_a = float(cell_a.get("gap") or 0.45)
+    demand_a = float(cell_a.get("demand") or 0.65)
+    supply_a = float(cell_a.get("supply") or 0.35)
+    venues_a = cell_a.get("venues") or []
+    venue_names_a = [v.get("name", "Local") for v in venues_a[:8] if isinstance(v, dict) and v.get("name")]
+    tags_a = cell_a.get("tags") or cell_a.get("taste_tags") or []
+
+    gap_b = float(cell_b.get("gap") or 0.45)
+    demand_b = float(cell_b.get("demand") or 0.65)
+    supply_b = float(cell_b.get("supply") or 0.35)
+    venues_b = cell_b.get("venues") or []
+    venue_names_b = [v.get("name", "Local") for v in venues_b[:8] if isinstance(v, dict) and v.get("name")]
+    tags_b = cell_b.get("tags") or cell_b.get("taste_tags") or []
+
+    prompt = f"""Compare two potential launch sites for opening a {concept_name} in {city}:
+
+### Location A: {label_a}
+- Opportunity Gap Score: {gap_a:.2f}
+- Taste Demand Index: {(demand_a*100):.0f}%
+- Market Saturation: {(supply_a*100):.0f}%
+- Competitors Detected ({len(venues_a)}): {', '.join(venue_names_a) if venue_names_a else 'None detected'}
+- Local Consumer Taste Signals: {', '.join(tags_a[:8]) if tags_a else 'N/A'}
+
+### Location B: {label_b}
+- Opportunity Gap Score: {gap_b:.2f}
+- Taste Demand Index: {(demand_b*100):.0f}%
+- Market Saturation: {(supply_b*100):.0f}%
+- Competitors Detected ({len(venues_b)}): {', '.join(venue_names_b) if venue_names_b else 'None detected'}
+- Local Consumer Taste Signals: {', '.join(tags_b[:8]) if tags_b else 'N/A'}
+
+Deliver a definitive, executive-grade comparative assessment."""
+
+    gemini_resp = await _call_gemini(SYSTEM_PROMPT_COMPARE, prompt, max_tokens=1000)
+    if gemini_resp:
+        return gemini_resp
+
+    client = _get_client()
+    if client is not None:
+        try:
+            resp = await client.chat.completions.create(
+                model=settings.OPENAI_MODEL,
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT_COMPARE},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.7,
+                max_tokens=800,
+            )
+            return resp.choices[0].message.content or ""
+        except Exception as e:
+            logger.warning("OpenAI compare failed: %s", e)
+
+    # Analytical fallback
+    winner = label_a if gap_a >= gap_b else label_b
+    runner_up = label_b if gap_a >= gap_b else label_a
+    diff = abs(gap_a - gap_b)
+    return f"""### 🏆 Head-to-Head Decision Brief: {label_a} vs {label_b}
+
+**Recommended Choice:** **{winner}** (Opportunity Gap Advantage: **+{diff:.2f}**)
+
+#### 1. Strategic Opportunity Evaluation
+- **{label_a} (Location A):** Gap Score **{gap_a:.2f}** (Demand: {(demand_a*100):.0f}%, Saturation: {(supply_a*100):.0f}%, {len(venues_a)} competitors).
+- **{label_b} (Location B):** Gap Score **{gap_b:.2f}** (Demand: {(demand_b*100):.0f}%, Saturation: {(supply_b*100):.0f}%, {len(venues_b)} competitors).
+
+#### 2. Taste Signal Comparison
+Consumer signals in **{label_a}** lean towards *{', '.join(tags_a[:4]) or 'artisan culture'}*, whereas **{label_b}** shows affinity for *{', '.join(tags_b[:4]) or 'community culture'}*.
+
+#### 3. Investment Verdict
+**{winner}** offers the highest whitespace and strongest cultural alignment for {concept_name}. **{runner_up}** should be slated for Phase 2 expansion."""
+

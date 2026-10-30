@@ -112,6 +112,19 @@ export async function liveQuery(lat, lon, conceptId, radiusKm = 1.5) {
 }
 
 /**
+ * Generate an AI head-to-head comparison brief.
+ */
+export async function generateCompareReport(cellA, cellB, conceptId, city) {
+  const { data } = await client.post('/compare-report', {
+    cell_a: cellA,
+    cell_b: cellB,
+    concept_id: conceptId,
+    city,
+  });
+  return data;
+}
+
+/**
  * Key status check
  */
 export async function fetchKeyStatus() {
@@ -122,9 +135,10 @@ export async function fetchKeyStatus() {
 /**
  * Update API keys dynamically
  */
-export async function updateApiKeys({ qlooApiKey, openaiApiKey }) {
+export async function updateApiKeys({ qlooApiKey, geminiApiKey, openaiApiKey }) {
   const { data } = await client.post('/settings/keys', {
     qloo_api_key: qlooApiKey,
+    gemini_api_key: geminiApiKey,
     openai_api_key: openaiApiKey,
   });
   return data;
