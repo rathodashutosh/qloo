@@ -1,5 +1,7 @@
 # 🧭 Taste-Gap Finder
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 **"Where should this business open?"** — A location intelligence tool for the Qloo LLM Hackathon.
 
 ## What It Does
@@ -76,3 +78,6 @@ Open http://localhost:3000
 
 ## Team
 Built for the Qloo LLM Hackathon 2026.
+
+## License
+Distributed under the [MIT License](LICENSE). See `LICENSE` for more information.
