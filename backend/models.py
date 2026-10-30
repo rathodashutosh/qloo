@@ -108,9 +108,12 @@ class ReportRequest(BaseModel):
 
 
 class ReportResponse(BaseModel):
-    report_text: str
+    report_text: str = ""
     report: Optional[str] = None  # Frontend convenience alias
-    structured_data: dict
+    structured_data: Optional[dict] = Field(default_factory=dict)
+    cell_id: Optional[str] = None
+    concept_id: Optional[str] = None
+    city: Optional[str] = None
 
 
 class LiveQueryRequest(BaseModel):
@@ -144,3 +147,4 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     response: str
+    reply: Optional[str] = None

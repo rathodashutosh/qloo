@@ -83,8 +83,18 @@ async def create_report(req: ReportRequest):
     )
 
     return ReportResponse(
+        report_text=report_text,
+        report=report_text,
+        structured_data={
+            "demand": demand,
+            "supply": supply,
+            "gap": gap,
+            "confidence": confidence,
+            "venue_count": venue_count,
+            "taste_tags": taste_tags,
+            "venues": venues,
+        },
         cell_id=req.cell_id,
         concept_id=concept_id,
-        report=report_text,
         city=req.city,
     )

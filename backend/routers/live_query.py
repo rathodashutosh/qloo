@@ -91,4 +91,4 @@ async def chat_endpoint(req: ChatRequest):
         context["city"] = req.city
 
     reply = await llm_chat(req.message, context)
-    return ChatResponse(reply=reply)
+    return ChatResponse(response=reply, reply=reply)
