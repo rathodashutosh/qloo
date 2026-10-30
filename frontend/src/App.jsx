@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import GapMap from './components/GapMap';
 import CityPicker from './components/CityPicker';
 import ConceptPicker from './components/ConceptPicker';
@@ -22,7 +22,9 @@ import {
   AlertCircle,
   TrendingUp,
   Target,
-  RefreshCw
+  GripVertical,
+  LayoutGrid,
+  Maximize2
 } from 'lucide-react';
 
 export default function App() {
@@ -31,9 +33,15 @@ export default function App() {
   const [compareMode, setCompareMode] = useState(false);
   const [selectedCell, setSelectedCell] = useState(null);
   const [compareCell, setCompareCell] = useState(null);
+  const [activeCompareSlot, setActiveCompareSlot] = useState('A'); // 'A' | 'B'
+
+  // Layout Width State — allows decreasing total map area and adjusting sidebar
+  const [sidebarWidth, setSidebarWidth] = useState(500); // default 500px for a well-balanced layout
+  const [isResizingSidebar, setIsResizingSidebar] = useState(false);
+  const sidebarDragStartX = useRef(0);
+  const sidebarStartWidth = useRef(500);
 
   // Live Point Query State
-  const [liveMode, setLiveMode] = useState(true);
   const [livePoint, setLivePoint] = useState(null);
   const [livePointData, setLivePointData] = useState(null);
   const [liveLoading, setLiveLoading] = useState(false);
@@ -55,26 +63,41 @@ export default function App() {
       .catch(console.error);
   }, []);
 
-  // When selected cell changes, load its details
+  // When selected cell changes (in non-compare mode), load its details
   useEffect(() => {
-    if (selectedCell?.id) {
-      loadCell(selectedCell.id);
-      setLivePoint(null);
-      setLivePointData(null);
-    } else {
-      clearDetail();
+    if (!compareMode) {
+      if (selectedCell?.id && !selectedCell.venues) {
+        loadCell(selectedCell.id);
+        setLivePoint(null);
+        setLivePointData(null);
+      } else if (!selectedCell) {
+        clearDetail();
+      }
     }
-  }, [selectedCell?.id, selectedConcept, loadCell, clearDetail]);
+  }, [selectedCell?.id, selectedConcept, compareMode, loadCell, clearDetail]);
 
   // Handle cell click on map
-  const handleCellClick = (cellProps) => {
+  const handleCellClick = async (cellProps) => {
     if (compareMode) {
-      if (!selectedCell) {
-        setSelectedCell(cellProps);
-      } else if (!compareCell && cellProps.id !== selectedCell.id) {
-        setCompareCell(cellProps);
+      // Determine which compare slot to fill
+      const targetSlot = !selectedCell ? 'A' : !compareCell ? 'B' : activeCompareSlot;
+
+      // Fetch complete details (venues, tags) for this cell
+      let fullProps = { ...cellProps };
+      try {
+        const { fetchCellDetail: fetchDetailApi } = await import('./api/client');
+        const detail = await fetchDetailApi(cellProps.id || cellProps.cell_id, selectedConcept);
+        fullProps = { ...fullProps, ...detail };
+      } catch (e) {
+        console.warn('Could not load cell detail:', e);
+      }
+
+      if (targetSlot === 'A') {
+        setSelectedCell(fullProps);
+        setActiveCompareSlot('B');
       } else {
-        setCompareCell(cellProps);
+        setCompareCell(fullProps);
+        setActiveCompareSlot('A');
       }
     } else {
       setSelectedCell(cellProps);
@@ -85,20 +108,68 @@ export default function App() {
 
   // Handle click on any coordinate on map (Live Point Query)
   const handleLivePointClick = async ({ lat, lon }) => {
-    setLivePoint({ lat, lon, label: `Live (${lat.toFixed(4)}, ${lon.toFixed(4)})` });
-    setSelectedCell(null);
-    setCompareCell(null);
+    const targetSlot = compareMode ? (!selectedCell ? 'A' : !compareCell ? 'B' : activeCompareSlot) : null;
     setLiveLoading(true);
 
     try {
       const res = await liveQuery(lat, lon, selectedConcept, 1.5);
-      setLivePointData(res);
+      const pointData = {
+        id: `live_${lat.toFixed(4)}_${lon.toFixed(4)}`,
+        lat,
+        lon,
+        label: `Live (${lat.toFixed(4)}, ${lon.toFixed(4)})`,
+        gap: res.gap,
+        demand: res.demand,
+        supply: res.supply,
+        confidence: res.confidence,
+        venues: res.venues || [],
+        taste_tags: res.taste_tags || [],
+      };
+
+      if (compareMode) {
+        if (targetSlot === 'A') {
+          setSelectedCell(pointData);
+          setActiveCompareSlot('B');
+        } else {
+          setCompareCell(pointData);
+          setActiveCompareSlot('A');
+        }
+      } else {
+        setLivePoint(pointData);
+        setLivePointData(res);
+        setSelectedCell(null);
+        setCompareCell(null);
+      }
     } catch (err) {
       console.error('Live query error:', err);
     } finally {
       setLiveLoading(false);
     }
   };
+
+  // Drag handler for sidebar width (allows adjusting map vs sidebar proportion)
+  const handleSidebarMouseDown = useCallback((e) => {
+    setIsResizingSidebar(true);
+    sidebarDragStartX.current = e.clientX;
+    sidebarStartWidth.current = sidebarWidth;
+
+    const handleMouseMove = (moveEvent) => {
+      const delta = moveEvent.clientX - sidebarDragStartX.current;
+      const minW = 360;
+      const maxW = Math.max(500, window.innerWidth * 0.65);
+      const newWidth = Math.max(minW, Math.min(maxW, sidebarStartWidth.current + delta));
+      setSidebarWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizingSidebar(false);
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  }, [sidebarWidth]);
 
   // Find top opportunity cell
   const topOpportunity = geojson?.features?.reduce((prev, curr) => {
@@ -107,10 +178,24 @@ export default function App() {
     return currGap > prevGap ? curr : prev;
   }, null);
 
+  // Extract all ranked cells for comparison
+  const allCellsList = (geojson?.features || [])
+    .map((f) => ({
+      id: f.properties?.id || f.properties?.cell_id,
+      label: f.properties?.label,
+      gap: f.properties?.gap,
+      demand: f.properties?.demand,
+      supply: f.properties?.supply,
+      lat: f.properties?.lat,
+      lon: f.properties?.lon,
+    }))
+    .filter((c) => c.label)
+    .sort((a, b) => (b.gap || 0) - (a.gap || 0));
+
   const venueMarkers = livePointData?.venues || cellData?.venues || [];
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden bg-slate-100">
+    <div className="flex flex-col h-screen w-screen overflow-hidden bg-slate-100 select-none">
       {/* Top Navbar */}
       <header className="h-14 bg-white border-b border-slate-200 px-4 flex items-center justify-between shrink-0 z-20 shadow-xs">
         <div className="flex items-center gap-3">
@@ -134,9 +219,46 @@ export default function App() {
           {topOpportunity && (
             <div className="hidden lg:flex items-center gap-1.5 px-3 py-1 bg-emerald-50 text-emerald-800 rounded-lg text-xs border border-emerald-200 font-medium">
               <TrendingUp className="h-3.5 w-3.5 text-emerald-600" />
-              <span>Top Area: <strong>{topOpportunity.properties.label}</strong> (Gap: {topOpportunity.properties.gap.toFixed(2)})</span>
+              <span>Top Opportunity: <strong>{topOpportunity.properties.label}</strong> (Gap: {topOpportunity.properties.gap.toFixed(2)})</span>
             </div>
           )}
+
+          {/* Layout Proportion Presets to easily decrease map dominance */}
+          <div className="hidden md:flex items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200 text-xs">
+            <button
+              onClick={() => setSidebarWidth(Math.round(window.innerWidth * 0.48))}
+              title="Balanced 50/50 View"
+              className={`px-2 py-1 rounded-md text-[11px] font-medium cursor-pointer transition-colors ${
+                Math.abs(sidebarWidth - window.innerWidth * 0.48) < 60
+                  ? 'bg-white text-indigo-700 shadow-2xs font-semibold'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Balanced View
+            </button>
+            <button
+              onClick={() => setSidebarWidth(Math.round(window.innerWidth * 0.60))}
+              title="Analytics Focus (Compact Map)"
+              className={`px-2 py-1 rounded-md text-[11px] font-medium cursor-pointer transition-colors ${
+                sidebarWidth >= window.innerWidth * 0.58
+                  ? 'bg-white text-indigo-700 shadow-2xs font-semibold'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Analytics Focus
+            </button>
+            <button
+              onClick={() => setSidebarWidth(380)}
+              title="Map Focus"
+              className={`px-2 py-1 rounded-md text-[11px] font-medium cursor-pointer transition-colors ${
+                sidebarWidth <= 400
+                  ? 'bg-white text-indigo-700 shadow-2xs font-semibold'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Map Focus
+            </button>
+          </div>
 
           {/* Qloo Key Status Button */}
           <button
@@ -164,25 +286,30 @@ export default function App() {
           <button
             onClick={() => {
               setCompareMode(!compareMode);
-              if (compareMode) setCompareCell(null);
+              if (compareMode) {
+                setCompareCell(null);
+              }
             }}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-150 cursor-pointer border ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-150 cursor-pointer border ${
               compareMode
                 ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
                 : 'bg-white text-slate-700 border-slate-200 hover:border-indigo-300 hover:bg-slate-50'
             }`}
           >
             <Columns className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Compare Mode</span>
+            <span>Compare Mode</span>
             {compareMode && <span className="w-1.5 h-1.5 rounded-full bg-emerald-300 animate-ping" />}
           </button>
         </div>
       </header>
 
-      {/* Main Content: Sidebar + Map */}
+      {/* Main Content: Sidebar + Resizer + Map */}
       <div className="flex flex-1 overflow-hidden relative">
-        {/* Left Sidebar */}
-        <aside className="w-96 bg-white border-r border-slate-200 flex flex-col shrink-0 z-10 shadow-sm overflow-hidden">
+        {/* Left Sidebar — width is adjustable, decreasing the total map area */}
+        <aside
+          style={{ width: `${sidebarWidth}px` }}
+          className="bg-white border-r border-slate-200 flex flex-col shrink-0 z-10 shadow-sm overflow-hidden"
+        >
           <div className="p-4 space-y-4 overflow-y-auto flex-1 sidebar-scroll">
             {/* City Selection */}
             <CityPicker
@@ -196,7 +323,7 @@ export default function App() {
               }}
             />
 
-            {/* Concept Selection */}
+            {/* Concept Selection with Search & Custom Concept Creation */}
             <ConceptPicker
               selectedConcept={selectedConcept}
               onConceptSelect={(conceptId) => {
@@ -210,8 +337,28 @@ export default function App() {
             />
 
             <div className="border-t border-slate-200 pt-3">
-              {/* Live Point Result */}
-              {livePoint ? (
+              {/* Compare Mode View */}
+              {compareMode ? (
+                <CompareView
+                  cellA={selectedCell}
+                  cellB={compareCell}
+                  conceptId={selectedConcept}
+                  city={selectedCity}
+                  allCells={allCellsList}
+                  onSelectCellA={setSelectedCell}
+                  onSelectCellB={setCompareCell}
+                  activeSlot={activeCompareSlot}
+                  onSelectSlot={setActiveCompareSlot}
+                  onFlyTo={(lat, lon) => {
+                    // map centers automatically
+                  }}
+                  onClose={() => {
+                    setCompareMode(false);
+                    setCompareCell(null);
+                  }}
+                />
+              ) : livePoint ? (
+                /* Live Point Result */
                 <LivePointDetail
                   data={livePointData}
                   loading={liveLoading}
@@ -224,40 +371,6 @@ export default function App() {
                     setLivePointData(null);
                   }}
                 />
-              ) : compareMode ? (
-                /* Compare Mode View */
-                <div className="space-y-3">
-                  <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-2.5 text-xs text-indigo-800 flex items-center justify-between">
-                    <span>
-                      {selectedCell && compareCell
-                        ? 'Two areas selected for comparison'
-                        : selectedCell
-                        ? 'Select a 2nd area on the map'
-                        : 'Select 1st area on the map'}
-                    </span>
-                    <button
-                      onClick={() => {
-                        setSelectedCell(null);
-                        setCompareCell(null);
-                      }}
-                      className="text-[11px] underline text-indigo-600 hover:text-indigo-900 cursor-pointer"
-                    >
-                      Clear
-                    </button>
-                  </div>
-                  {selectedCell && compareCell ? (
-                    <CompareView
-                      cellA={selectedCell}
-                      cellB={compareCell}
-                      onClose={() => setCompareMode(false)}
-                    />
-                  ) : (
-                    <div className="text-center py-8 text-slate-400 text-xs">
-                      <Columns className="h-8 w-8 mx-auto mb-2 text-slate-300" />
-                      Click any two hex cells on the map to compare market opportunity side-by-side.
-                    </div>
-                  )}
-                </div>
               ) : selectedCell ? (
                 /* Selected Cell Details */
                 <CellDetail
@@ -273,10 +386,11 @@ export default function App() {
                   <div className="w-10 h-10 rounded-full bg-pink-50 text-pink-600 flex items-center justify-center mx-auto">
                     <Target className="h-5 w-5" />
                   </div>
-                  <h4 className="text-xs font-semibold text-slate-800">Interactive Opportunity Map</h4>
+                  <h4 className="text-xs font-semibold text-slate-800">Interactive Location Intelligence</h4>
                   <p className="text-[11px] text-slate-500 leading-relaxed">
-                    • <strong>Click colored hexagons</strong> to inspect neighborhood demand & saturation.<br />
-                    • <strong>Click ANY point on the map</strong> to run a live Qloo coordinate query.
+                    • <strong>Click colored hexagons</strong> to see pointers, coverage boundaries, and demand breakdown.<br />
+                    • <strong>Click ANY point on the map</strong> to evaluate a custom location in real time with Qloo.<br />
+                    • Turn on <strong>Compare Mode</strong> to evaluate two locations side-by-side.
                   </p>
                   <div className="pt-2">
                     <Legend />
@@ -286,8 +400,8 @@ export default function App() {
             </div>
           </div>
 
-          {/* Chat Assistant at bottom of sidebar */}
-          <div className="border-t border-slate-200 p-3 bg-slate-50/70 shrink-0">
+          {/* Chat Assistant at bottom of sidebar — adjustable height with presets */}
+          <div className="border-t border-slate-200 p-2.5 bg-slate-50/80 shrink-0">
             <ChatBox
               cellId={selectedCell?.id || (livePoint ? `coord_${livePoint.lat.toFixed(4)}` : undefined)}
               conceptId={selectedConcept}
@@ -296,12 +410,26 @@ export default function App() {
           </div>
         </aside>
 
-        {/* Map Container */}
+        {/* Draggable Vertical Splitter between Sidebar and Map */}
+        <div
+          onMouseDown={handleSidebarMouseDown}
+          className={`w-2 hover:w-2.5 bg-slate-200 hover:bg-indigo-400 cursor-col-resize z-20 flex items-center justify-center transition-colors ${
+            isResizingSidebar ? 'bg-indigo-600 w-2.5' : ''
+          }`}
+          title="Drag left/right to adjust map and sidebar sizes"
+        >
+          <GripVertical className="h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+        </div>
+
+        {/* Map Container — reduced and balanced */}
         <main className="flex-1 relative overflow-hidden bg-slate-200">
           <GapMap
             city={selectedCity}
             geojson={geojson}
             selectedCellId={selectedCell?.id}
+            selectedCell={selectedCell}
+            compareCell={compareCell}
+            compareMode={compareMode}
             venueMarkers={venueMarkers}
             livePoint={livePoint}
             onCellClick={handleCellClick}
@@ -311,9 +439,15 @@ export default function App() {
           {/* Floating Instructions Pill */}
           <div className="absolute top-3 left-4 bg-white/95 backdrop-blur-md px-3.5 py-2 rounded-full shadow-md border border-slate-200 text-xs text-slate-700 flex items-center gap-2 pointer-events-none z-10">
             <span className="w-2.5 h-2.5 rounded-full bg-pink-500 animate-ping inline-block" />
-            <span className="font-semibold text-slate-800">Live Map Active</span>
+            <span className="font-semibold text-slate-800">
+              {compareMode ? 'Dual Compare Active' : 'Live Map Active'}
+            </span>
             <span className="text-slate-400">|</span>
-            <span className="text-slate-600">Click any hex or point to query Qloo</span>
+            <span className="text-slate-600">
+              {compareMode
+                ? 'Select 2 locations to compare metrics'
+                : 'Click any hex or point to drop pointer & view area'}
+            </span>
           </div>
 
           {/* Floating Map Legend (bottom-right) */}

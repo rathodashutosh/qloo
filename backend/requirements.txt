@@ -9,3 +9,4 @@ python-dotenv>=1.0.0
 h3>=3.7.0
 shapely>=2.0.0
 openai>=1.6.0
+python-multipart>=0.0.12

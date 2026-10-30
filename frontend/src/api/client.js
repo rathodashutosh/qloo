@@ -30,8 +30,18 @@ client.interceptors.response.use(
 /**
  * Fetch available concepts.
  */
-export async function fetchConcepts() {
-  const { data } = await client.get('/concepts');
+export async function fetchConcepts(query = '') {
+  const { data } = await client.get('/concepts', {
+    params: query ? { query } : undefined,
+  });
+  return data;
+}
+
+/**
+ * Create a new custom concept.
+ */
+export async function createConcept(conceptData) {
+  const { data } = await client.post('/concepts', conceptData);
   return data;
 }
 

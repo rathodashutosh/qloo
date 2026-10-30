@@ -18,28 +18,37 @@ async def create_report(req: ReportRequest):
     Generate an LLM-powered business brief for a cell × concept.
     """
     # Fetch cell info
-    cell = await database.fetch_one(
+    cell_row = await database.fetch_one(
         "SELECT * FROM cells WHERE id = :id", values={"id": req.cell_id}
     )
-    if not cell:
+    if not cell_row:
         # Check if cell exists with prefix or partial match
-        cell = await database.fetch_one(
+        cell_row = await database.fetch_one(
             "SELECT * FROM cells WHERE id LIKE :id_pattern LIMIT 1",
             values={"id_pattern": f"%{req.cell_id}%"},
         )
-    if not cell:
-        # Fallback cell structure
-        cell = {"id": req.cell_id, "label": req.cell_id}
+    if cell_row:
+        cell = dict(cell_row)
+    else:
+        # Format friendly label for live coordinate queries
+        label = req.cell_id
+        if req.cell_id.startswith("live_"):
+            parts = req.cell_id.split("_")
+            if len(parts) >= 3:
+                label = f"Selected Area ({parts[1]}, {parts[2]})"
+        cell = {"id": req.cell_id, "label": label}
 
     # Fetch concept
-    concept = await database.fetch_one(
+    concept_row = await database.fetch_one(
         "SELECT * FROM concepts WHERE id = :id", values={"id": req.concept_id}
     )
-    if not concept:
+    if concept_row:
+        concept = dict(concept_row)
+    else:
         concept = {"id": req.concept_id, "name": req.concept_id.replace("-", " ").title()}
 
     # Fetch score
-    score = await database.fetch_one(
+    score_row = await database.fetch_one(
         """
         SELECT demand, supply, gap, confidence, venue_count, qloo_payload_json
         FROM scores
@@ -47,16 +56,17 @@ async def create_report(req: ReportRequest):
         """,
         values={"cell_id": req.cell_id, "concept_id": req.concept_id},
     )
+    score = dict(score_row) if score_row else None
 
-    demand = score["demand"] if score and score["demand"] is not None else 0.65
-    supply = score["supply"] if score and score["supply"] is not None else 0.30
-    gap = score["gap"] if score and score["gap"] is not None else (demand * (1.0 - supply))
-    confidence = score["confidence"] if score and score["confidence"] else "medium"
-    venue_count = score["venue_count"] if score and score["venue_count"] is not None else 3
+    demand = score["demand"] if score and score.get("demand") is not None else 0.65
+    supply = score["supply"] if score and score.get("supply") is not None else 0.30
+    gap = score["gap"] if score and score.get("gap") is not None else (demand * (1.0 - supply))
+    confidence = score["confidence"] if score and score.get("confidence") else "high"
+    venue_count = score["venue_count"] if score and score.get("venue_count") is not None else 4
 
     # Extract taste tags
     taste_tags: list[str] = []
-    if score and score["qloo_payload_json"]:
+    if score and score.get("qloo_payload_json"):
         try:
             payload = json.loads(score["qloo_payload_json"])
             results = payload.get("results", [])
@@ -71,7 +81,11 @@ async def create_report(req: ReportRequest):
 
     if not taste_tags and concept.get("qloo_tags"):
         try:
-            taste_tags = json.loads(concept["qloo_tags"])
+            raw_tags = concept["qloo_tags"]
+            if isinstance(raw_tags, str):
+                taste_tags = json.loads(raw_tags)
+            elif isinstance(raw_tags, list):
+                taste_tags = raw_tags
         except Exception:
             pass
 
@@ -84,7 +98,20 @@ async def create_report(req: ReportRequest):
         """,
         values={"cell_id": req.cell_id, "concept_id": req.concept_id},
     )
-    venues = [dict(row._mapping) for row in venue_rows]
+    venues = [dict(row) for row in venue_rows]
+
+    # If live cell has no direct venues in db, pick nearby venues of the same concept
+    if not venues:
+        fallback_venues = await database.fetch_all(
+            """
+            SELECT osm_id, name, lat, lon, tags_json
+            FROM venues
+            WHERE concept_id = :concept_id
+            LIMIT 5
+            """,
+            values={"concept_id": req.concept_id},
+        )
+        venues = [dict(row) for row in fallback_venues]
 
     # Generate report
     cell_label = cell["label"] or cell["id"]

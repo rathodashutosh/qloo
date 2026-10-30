@@ -251,8 +251,9 @@ async def seed_city(city_config: dict):
                         lon=cell["lon"],
                         radius_km=cell["radius_km"],
                     )
-                    results = qloo_data.get("results", [])
-                    qloo_result_count = len(results)
+                    raw_results = qloo_data.get("results", [])
+                    entities = raw_results.get("entities", []) if isinstance(raw_results, dict) else raw_results
+                    qloo_result_count = len(entities)
                     demand_raw = float(qloo_result_count)
                 except Exception:
                     has_real_qloo = False

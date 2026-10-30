@@ -157,3 +157,21 @@ export function hexagonVertices(centerLat, centerLon, radiusKm) {
   vertices.push(vertices[0]); // close the polygon
   return vertices;
 }
+
+/**
+ * Generate circle polygon coordinates from center point and radius.
+ */
+export function circleVertices(centerLat, centerLon, radiusKm = 1.5, points = 64) {
+  const coords = [];
+  const distanceX = radiusKm / (111.32 * Math.cos((centerLat * Math.PI) / 180));
+  const distanceY = radiusKm / 110.574;
+
+  for (let i = 0; i < points; i++) {
+    const theta = (i / points) * (2 * Math.PI);
+    const x = distanceX * Math.cos(theta);
+    const y = distanceY * Math.sin(theta);
+    coords.push([Number((centerLon + x).toFixed(6)), Number((centerLat + y).toFixed(6))]);
+  }
+  coords.push(coords[0]);
+  return coords;
+}
