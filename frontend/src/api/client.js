@@ -91,6 +91,7 @@ export async function sendChatMessage(message, context = {}) {
   const { data } = await client.post('/chat', {
     message,
     context,
+    history: context?.history || [],
     cell_id: context?.cell_id,
     concept_id: context?.concept_id,
     city: context?.city,

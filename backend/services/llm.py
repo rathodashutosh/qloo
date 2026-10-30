@@ -22,14 +22,16 @@ Rules:
 - Be specific, analytical, and actionable
 - Keep it under 350 words"""
 
-SYSTEM_PROMPT_CHAT = """You are a senior location intelligence analyst assistant for the Taste-Gap Finder tool. You help entrepreneurs and real-estate advisors find prime locations to open cafes, bars, and venues.
-You analyze demand scores (0-1 from Qloo taste data), supply saturation (0-1 from OpenStreetMap), and gap scores (Demand × [1 - Supply]).
+SYSTEM_PROMPT_CHAT = """You are "TasteAI", a world-class AI Location Intelligence Analyst, Commercial Real Estate Advisor, and Business Strategist powered by Google Gemini.
+You advise entrepreneurs, business operators, and investors on selecting prime locations, evaluating commercial real estate, analyzing consumer taste culture, and understanding market competition.
 
-Rules:
-- Ground your answers directly in the real context provided (exact venue names, venue count, demand and gap scores, and Qloo taste tags).
-- If the user asks for venue or restaurant counts, report the exact count and list the competitor names provided in the context.
-- Be concise, professional, and practical.
-- Never invent numbers or venue names not present in the provided context."""
+Your Core Capabilities:
+1. Location & Market Analysis: Whenever a location is selected, synthesize the provided geospatial data (Demand score, Supply saturation, Opportunity Gap, detected Competitors, and Qloo Taste Signals) into practical, clear, actionable insights.
+2. Answer Any Question: Answer WHATEVER the user asks about! This includes competitor analysis, foot traffic estimates, menu design, pricing strategies, marketing tactics, demographic profiles, comparisons with other neighborhoods or cities, leasing negotiation tips, or general business and retail strategy.
+3. Conversational Memory: Maintain continuity across multi-turn questions and follow-ups.
+4. Rich, Readable Markdown: Structure answers with bullet points, bold key terms, and concise paragraphs.
+
+Tone: Professional, friendly, insightful, and strategic. If asked about competitor counts or venue names for the selected location, provide the exact numbers and names from the context, and offer helpful strategic commentary."""
 
 SYSTEM_PROMPT_COMPARE = """You are a senior real estate and taste-intelligence advisor. You are performing a head-to-head location comparison between Location A and Location B for opening a new commercial concept.
 Analyze:
@@ -40,6 +42,63 @@ Analyze:
 5. Expansion Roadmap (Phase 1 launch recommendation vs Phase 2 expansion)
 
 Format with clean Markdown headings and bullet points. Never hallucinate fake venues or metrics beyond what is given."""
+
+
+async def _call_gemini_multiturn(
+    system_prompt: str,
+    history: list[dict],
+    user_prompt: str,
+    max_tokens: int = 2048,
+) -> str | None:
+    """Call Google Gemini 2.5 Flash with native system_instruction and multi-turn contents."""
+    api_key = settings.GEMINI_API_KEY
+    if not api_key or api_key.startswith("your-") or api_key.strip() == "":
+        return None
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{settings.GEMINI_MODEL}:generateContent?key={api_key.strip()}"
+
+    contents = []
+    # Add conversation history
+    for item in (history or []):
+        role = item.get("role")
+        content = item.get("content") or item.get("text") or ""
+        if not content:
+            continue
+        gemini_role = "user" if role == "user" else "model"
+        contents.append({"role": gemini_role, "parts": [{"text": str(content)}]})
+
+    # Add the current user prompt
+    contents.append({"role": "user", "parts": [{"text": user_prompt}]})
+
+    payload = {
+        "system_instruction": {
+            "parts": [{"text": system_prompt}]
+        },
+        "contents": contents,
+        "generationConfig": {
+            "temperature": 0.7,
+            "maxOutputTokens": max_tokens,
+            "thinkingConfig": {"thinkingBudget": 0},
+        },
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(url, json=payload)
+            if resp.status_code == 200:
+                data = resp.json()
+                candidates = data.get("candidates", [])
+                if candidates:
+                    parts = candidates[0].get("content", {}).get("parts", [])
+                    if parts:
+                        text = parts[0].get("text", "").strip()
+                        if text:
+                            logger.info("Successfully received Gemini response (%d chars)", len(text))
+                            return text
+            logger.warning("Gemini API error (HTTP %s): %s", resp.status_code, resp.text[:200])
+    except Exception as exc:
+        logger.warning("Gemini API call failed (%s)", exc)
+    return None
 
 
 async def _call_gemini(system_prompt: str, user_prompt: str, max_tokens: int = 900) -> str | None:
@@ -274,9 +333,11 @@ Write a comprehensive business brief for opening a {concept_name} in {cell_label
 async def chat(
     message: str,
     context: dict | None = None,
+    history: list[dict] | None = None,
 ) -> str:
-    """Handle chat messages with optional data context via Gemini or OpenAI."""
+    """Handle chat messages with optional data context and conversation history via Gemini or OpenAI."""
     context = context or {}
+    history = history or []
 
     venue_count = context.get("venue_count", 0)
     venues = context.get("venues", [])
@@ -291,22 +352,37 @@ async def chat(
     venue_summary = f"{venue_count} venues detected ({', '.join(venue_names[:10])})" if venue_names else f"{venue_count} venues detected"
     tags = context.get("taste_tags") or context.get("tags") or []
     tags_text = ", ".join(tags[:12]) if tags else "N/A"
-    cell_label = context.get("cell_label") or context.get("cell_id") or "Selected Location"
+    cell_label = context.get("cell_label") or context.get("cell_id")
     concept = context.get("concept_name") or context.get("concept_id") or "Commercial Concept"
     city = context.get("city") or "Current City"
 
-    context_text = f"""- Location: {cell_label} in {city}
-- Target Concept: {concept}
-- Opportunity Gap Score: {context.get('gap', 0.45):.2f} (Demand: {((context.get('demand') or 0.65)*100):.0f}%, Supply Saturation: {((context.get('supply') or 0.35)*100):.0f}%)
-- Existing Competitors within 1.5 km: {venue_summary}
-- Top Qloo Consumer Taste Signals: {tags_text}"""
+    context_lines = []
+    if cell_label:
+        context_lines.append(f"Current Selected Location: {cell_label} in {city}")
+        context_lines.append(f"Target Concept: {concept}")
+        if context.get("gap") is not None:
+            context_lines.append(f"Opportunity Gap Score: {context.get('gap'):.2f}")
+        if context.get("demand") is not None:
+            context_lines.append(f"Qloo Taste Demand Index: {((context.get('demand') or 0)*100):.0f}%")
+        if context.get("supply") is not None:
+            context_lines.append(f"OSM Supply Saturation: {((context.get('supply') or 0)*100):.0f}%")
+        context_lines.append(f"Nearby Competitor Venues within 1.5 km: {venue_summary}")
+        context_lines.append(f"Local Qloo Consumer Taste Signals: {tags_text}")
+    else:
+        context_lines.append(f"Active City: {city}")
+        context_lines.append(f"Active Concept: {concept}")
 
-    user_message = f"Grounded Context Data:\n{context_text}\n\nUser Question: {message}"
+    context_block = "\n".join(context_lines)
+    user_message = f"""[System Location Intelligence Context]:
+{context_block}
 
-    # 1. Try Gemini
-    gemini_resp = await _call_gemini(SYSTEM_PROMPT_CHAT, user_message, max_tokens=650)
+[User Question]:
+{message}"""
+
+    # 1. Try Gemini with full multi-turn conversation history
+    gemini_resp = await _call_gemini_multiturn(SYSTEM_PROMPT_CHAT, history, user_message, max_tokens=2048)
     if gemini_resp:
-        logger.info("Responded via Gemini AI for chat query: %s", message[:60])
+        logger.info("Responded via Gemini 2.5 Flash for chat query: %s", message[:60])
         return gemini_resp
 
     # 2. Try OpenAI
@@ -314,14 +390,16 @@ async def chat(
     if client is not None:
         try:
             logger.info("Calling OpenAI chat completion for query: %s", message[:60])
+            openai_messages = [{"role": "system", "content": SYSTEM_PROMPT_CHAT}]
+            for h in history[-6:]:
+                openai_messages.append({"role": h.get("role", "user"), "content": h.get("content", "")})
+            openai_messages.append({"role": "user", "content": user_message})
+
             response = await client.chat.completions.create(
                 model=settings.OPENAI_MODEL,
-                messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT_CHAT},
-                    {"role": "user", "content": user_message},
-                ],
+                messages=openai_messages,
                 temperature=0.7,
-                max_tokens=500,
+                max_tokens=700,
             )
             return response.choices[0].message.content or ""
         except Exception as exc:

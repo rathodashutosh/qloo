@@ -304,6 +304,6 @@ async def chat_endpoint(req: ChatRequest):
             context["supply"] = min(1.0, len(venues_list) / 6.0)
             context["gap"] = round(context["demand"] * (1.0 - context["supply"]), 3)
 
-    response_text = await llm_chat(message=req.message, context=context)
+    response_text = await llm_chat(message=req.message, context=context, history=req.history or [])
     return ChatResponse(response=response_text)
 
