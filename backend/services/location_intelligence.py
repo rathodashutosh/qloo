@@ -226,8 +226,12 @@ Return strictly JSON with:
                     },
                 )
                 if resp.status_code == 200:
-                    text = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
-                    return json.loads(text)
+                    candidates = resp.json().get("candidates", [])
+                    if candidates:
+                        parts = candidates[0].get("content", {}).get("parts", [])
+                        text = "".join(p.get("text", "") for p in parts if "text" in p and not p.get("thought", False))
+                        if text:
+                            return json.loads(text)
         except Exception as e:
             logger.debug("Gemini micro-market profiler attempt (%s) failed: %s", m, e)
 

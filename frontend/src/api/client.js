@@ -75,12 +75,13 @@ export async function generateReport(cellId, conceptId, city) {
 }
 
 /**
- * Send a chat message with context.
+ * Send a chat message with context and history.
  */
-export async function sendChatMessage(message, context = {}) {
+export async function sendChatMessage(message, context = {}, history = []) {
   const { data } = await client.post('/chat', {
     message,
     context,
+    history,
     cell_id: context?.cell_id,
     concept_id: context?.concept_id,
     city: context?.city,

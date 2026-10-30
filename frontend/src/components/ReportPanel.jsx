@@ -59,7 +59,7 @@ export default function ReportPanel({ report }) {
       </div>
 
       {/* Narrative Body */}
-      <div className="p-3.5 prose prose-sm max-w-none text-slate-700 text-xs leading-relaxed max-h-80 overflow-y-auto sidebar-scroll">
+      <div className="p-3.5 prose prose-sm max-w-none text-slate-700 text-xs leading-relaxed max-h-96 overflow-y-auto sidebar-scroll">
         <ReactMarkdown>{text}</ReactMarkdown>
       </div>
 

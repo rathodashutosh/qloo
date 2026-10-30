@@ -1,17 +1,18 @@
 import { useState, useRef, useEffect } from 'react';
+import ReactMarkdown from 'react-markdown';
 import { sendChatMessage } from '../api/client';
-import { Send, MessageCircle, Bot, User } from 'lucide-react';
+import { Send, MessageCircle, Bot, User, Sparkles } from 'lucide-react';
 
 /**
- * ChatBox — chat input at bottom of sidebar for follow-up questions.
+ * ChatBox — interactive location intelligence chat assistant for follow-up questions.
  */
-export default function ChatBox({ cellId, conceptId, city }) {
+export default function ChatBox({ cellId, conceptId, city, selectedCell, livePointData }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const scrollRef = useRef(null);
 
-  // Auto-scroll on new messages
+  // Auto-scroll on new messages or typing state
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -20,23 +21,43 @@ export default function ChatBox({ cellId, conceptId, city }) {
 
   const handleSend = async () => {
     const text = input.trim();
-    if (!text) return;
+    if (!text || isTyping) return;
 
     const userMessage = { role: 'user', content: text };
-    setMessages((prev) => [...prev, userMessage]);
+    const nextMessages = [...messages, userMessage];
+    setMessages(nextMessages);
     setInput('');
     setIsTyping(true);
 
+    // Build rich location context
+    const activeData = livePointData || selectedCell;
+    const context = {
+      city,
+      concept_id: conceptId,
+      cell_id: cellId,
+      label: activeData?.label || selectedCell?.label,
+      suburb: activeData?.suburb,
+      lat: activeData?.lat,
+      lon: activeData?.lon,
+      demand: activeData?.demand,
+      supply: activeData?.supply,
+      gap: activeData?.gap,
+      landmarks: activeData?.landmarks || [],
+      venues: (activeData?.venues || []).slice(0, 10),
+      taste_tags: activeData?.taste_tags || [],
+    };
+
     try {
-      const data = await sendChatMessage(text, {
-        cell_id: cellId,
-        concept_id: conceptId,
-        city,
-      });
+      const history = nextMessages.map((m) => ({
+        role: m.role,
+        content: m.content,
+      }));
+
+      const data = await sendChatMessage(text, context, history);
 
       const botMessage = {
         role: 'assistant',
-        content: data.response || data.message || data.answer || 'No response received.',
+        content: data.response || data.reply || data.message || 'No response received.',
       };
       setMessages((prev) => [...prev, botMessage]);
     } catch (err) {
@@ -44,7 +65,7 @@ export default function ChatBox({ cellId, conceptId, city }) {
         ...prev,
         {
           role: 'assistant',
-          content: `Error: ${err.message || 'Failed to get response'}. Make sure the API server is running.`,
+          content: `Error: ${err.response?.data?.detail || err.message || 'Failed to get response'}.`,
         },
       ]);
     } finally {
@@ -60,21 +81,34 @@ export default function ChatBox({ cellId, conceptId, city }) {
   };
 
   return (
-    <div className="flex flex-col h-full max-h-[280px]">
-      <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
-        <MessageCircle className="h-3.5 w-3.5" />
-        Ask a Question
+    <div className="flex flex-col h-full max-h-[340px]">
+      <div className="flex items-center justify-between text-xs font-semibold text-slate-600 uppercase tracking-wider mb-2">
+        <span className="flex items-center gap-1.5">
+          <MessageCircle className="h-3.5 w-3.5 text-indigo-600" />
+          Location Intelligence Chat
+        </span>
+        <span className="text-[10px] text-indigo-600 lowercase bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 rounded font-normal">
+          Gemini AI
+        </span>
       </div>
 
-      {/* Messages */}
+      {/* Messages Scroll Area */}
       <div
         ref={scrollRef}
-        className="flex-1 overflow-y-auto space-y-2 mb-2 chat-scroll min-h-0"
+        className="flex-1 overflow-y-auto space-y-2.5 mb-2.5 chat-scroll min-h-[120px] max-h-[220px] pr-1"
       >
         {messages.length === 0 && (
-          <p className="text-[11px] text-slate-400 italic py-2">
-            Ask about demand patterns, location strategy, or competitive landscape...
-          </p>
+          <div className="text-[11px] text-slate-500 bg-slate-50 border border-slate-100 rounded-lg p-2.5 leading-relaxed">
+            <p className="font-semibold text-slate-700 mb-1 flex items-center gap-1">
+              <Sparkles className="h-3 w-3 text-amber-500" />
+              Ask follow-up questions about this area:
+            </p>
+            <ul className="space-y-0.5 text-slate-500 list-disc list-inside">
+              <li>&ldquo;What about opening a Chinese restaurant or bakery here?&rdquo;</li>
+              <li>&ldquo;Who are the daily commuters and students in this corridor?&rdquo;</li>
+              <li>&ldquo;What pricing strategy fits this neighborhood?&rdquo;</li>
+            </ul>
+          </div>
         )}
 
         {messages.map((msg, i) => (
@@ -88,13 +122,19 @@ export default function ChatBox({ cellId, conceptId, city }) {
               </div>
             )}
             <div
-              className={`rounded-lg px-2.5 py-1.5 text-xs leading-relaxed max-w-[85%] ${
+              className={`rounded-lg px-3 py-2 text-xs leading-relaxed max-w-[88%] shadow-2xs ${
                 msg.role === 'user'
                   ? 'bg-indigo-600 text-white'
-                  : 'bg-slate-100 text-slate-700'
+                  : 'bg-white border border-slate-200 text-slate-700'
               }`}
             >
-              {msg.content}
+              {msg.role === 'assistant' ? (
+                <div className="prose prose-xs prose-slate max-w-none break-words">
+                  <ReactMarkdown>{msg.content}</ReactMarkdown>
+                </div>
+              ) : (
+                msg.content
+              )}
             </div>
             {msg.role === 'user' && (
               <div className="w-5 h-5 rounded-full bg-slate-200 flex items-center justify-center flex-shrink-0 mt-0.5">
@@ -109,7 +149,8 @@ export default function ChatBox({ cellId, conceptId, city }) {
             <div className="w-5 h-5 rounded-full bg-indigo-100 flex items-center justify-center flex-shrink-0">
               <Bot className="h-3 w-3 text-indigo-600" />
             </div>
-            <div className="bg-slate-100 rounded-lg px-3 py-2 text-xs text-slate-400">
+            <div className="bg-slate-100 rounded-lg px-3 py-2 text-xs text-slate-500 flex items-center gap-1.5">
+              <span>Analyzing location...</span>
               <span className="inline-flex gap-1">
                 <span className="w-1 h-1 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
                 <span className="w-1 h-1 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
@@ -120,20 +161,21 @@ export default function ChatBox({ cellId, conceptId, city }) {
         )}
       </div>
 
-      {/* Input */}
-      <div className="flex items-center gap-1.5 border border-slate-200 rounded-lg bg-white px-2 py-1">
+      {/* Input Form */}
+      <div className="flex items-center gap-1.5 border border-slate-200 rounded-lg bg-white px-2.5 py-1.5 focus-within:border-indigo-400 focus-within:ring-1 focus-within:ring-indigo-300 transition-all">
         <input
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="Ask a follow-up question..."
-          className="flex-1 text-xs text-slate-700 placeholder-slate-400 outline-none bg-transparent py-1"
+          disabled={isTyping}
+          className="flex-1 text-xs text-slate-700 placeholder-slate-400 outline-none bg-transparent py-0.5"
         />
         <button
           onClick={handleSend}
           disabled={!input.trim() || isTyping}
-          className="p-1.5 rounded-md bg-indigo-600 text-white disabled:opacity-40 hover:bg-indigo-700 transition-colors cursor-pointer disabled:cursor-not-allowed"
+          className="p-1.5 rounded-md bg-indigo-600 text-white disabled:opacity-40 hover:bg-indigo-700 transition-colors cursor-pointer disabled:cursor-not-allowed shrink-0"
         >
           <Send className="h-3 w-3" />
         </button>

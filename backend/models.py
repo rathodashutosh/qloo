@@ -145,6 +145,7 @@ class LiveQueryResponse(BaseModel):
 class ChatRequest(BaseModel):
     message: str
     context: Optional[dict] = Field(default_factory=dict)
+    history: Optional[list[dict]] = Field(default_factory=list)
     cell_id: Optional[str] = None
     concept_id: Optional[str] = None
     city: Optional[str] = None

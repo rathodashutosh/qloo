@@ -95,5 +95,5 @@ async def chat_endpoint(req: ChatRequest):
     if req.city and "city" not in context:
         context["city"] = req.city
 
-    reply = await llm_chat(req.message, context)
+    reply = await llm_chat(req.message, context, history=req.history)
     return ChatResponse(response=reply, reply=reply)

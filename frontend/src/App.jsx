@@ -307,9 +307,11 @@ export default function App() {
           {/* Chat Assistant at bottom of sidebar */}
           <div className="border-t border-slate-200 p-3 bg-slate-50/70 shrink-0">
             <ChatBox
-              cellId={selectedCell?.id || (livePoint ? `coord_${livePoint.lat.toFixed(4)}` : undefined)}
+              cellId={selectedCell?.id || (livePoint ? `coord_${livePoint.lat.toFixed(4)}_${livePoint.lon.toFixed(4)}` : undefined)}
               conceptId={selectedConcept}
               city={selectedCity}
+              selectedCell={selectedCell}
+              livePointData={livePointData}
             />
           </div>
         </aside>

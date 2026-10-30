@@ -27,24 +27,23 @@ Rules:
 - Be specific, analytical, and actionable
 - Keep it under 350 words"""
 
-SYSTEM_PROMPT_CHAT = """You are a location intelligence analyst assistant for the Taste-Gap Finder tool. You help entrepreneurs and real-estate advisors find prime locations to open cafes, bars, and venues.
-You analyze demand scores (0-1 from Qloo taste data), supply saturation (0-1 from OpenStreetMap), and gap scores (Demand × [1 - Supply]).
+SYSTEM_PROMPT_CHAT = """You are an expert location intelligence and commercial real-estate advisor assistant for the Taste-Gap Finder tool. You help entrepreneurs and business owners evaluate prime locations to open cafes, restaurants, bars, and retail venues.
 
-Rules:
-- Only reference data that has been provided in the context
-- Never invent numbers or venue names
-- Be concise, professional, and practical
-- If the user asks for suggestions or comparisons, highlight high-gap areas with low competition"""
+When the user asks questions:
+- Provide smart, grounded, hyper-local commercial advice specific to their selected neighborhood, corridor, and landmarks.
+- If the user asks about ANY cuisine or concept (e.g. Chinese restaurant, bakery, cloud kitchen, sports bar, Italian, etc.), analyze that concept's market fit in that specific neighborhood: discuss the local consumer demographic (students, families, young professionals), the competition density, and recommend winning positioning and menu strategies.
+- Never give a blank robotic refusal or say 'I don't have context' - synthesize the corridor's commercial dynamics, nearby transit nodes, student campuses, and retail footfall to provide actionable market entry strategy.
+- Format your response cleanly with clear headings or bullet points so it is easy to read. Be practical, inspiring, and sharp."""
 
 
-async def _call_gemini(system_prompt: str, user_prompt: str, max_tokens: int = 650) -> Optional[str]:
+async def _call_gemini(system_prompt: str, user_prompt: str, max_tokens: int = 2500) -> Optional[str]:
     """Call Google Gemini API using the configured GEMINI_API_KEY."""
     gemini_key = settings.GEMINI_API_KEY.strip() if settings.GEMINI_API_KEY else ""
     if not gemini_key:
         return None
 
-    # Models to try in order of preference
-    candidate_models = ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.8-flash"]
+    # Models to try in order of preference (flash-lite is fastest and avoids high-demand spikes)
+    candidate_models = ["gemini-3.5-flash-lite", "gemini-3.5-flash", "gemini-3.8-flash"]
 
     for model_name in candidate_models:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={gemini_key}"
@@ -58,19 +57,23 @@ async def _call_gemini(system_prompt: str, user_prompt: str, max_tokens: int = 6
         }
 
         try:
-            async with httpx.AsyncClient(timeout=25.0) as client:
+            async with httpx.AsyncClient(timeout=30.0) as client:
                 resp = await client.post(url, json=payload)
                 if resp.status_code == 200:
                     data = resp.json()
                     candidates = data.get("candidates", [])
                     if candidates:
                         parts = candidates[0].get("content", {}).get("parts", [])
-                        if parts and "text" in parts[0]:
-                            logger.info("Successfully generated report using Gemini model: %s", model_name)
-                            return parts[0]["text"]
-                elif resp.status_code == 404:
-                    # Model deprecated or alternate name needed, try next model
-                    logger.warning("Gemini model %s returned 404, trying next candidate...", model_name)
+                        # Join all parts to prevent truncation from multi-part generation
+                        full_text = "".join(
+                            p.get("text", "") for p in parts
+                            if "text" in p and not p.get("thought", False)
+                        ).strip()
+                        if full_text:
+                            logger.info("Successfully generated response using Gemini model: %s (length: %d chars)", model_name, len(full_text))
+                            return full_text
+                elif resp.status_code in (404, 503):
+                    logger.warning("Gemini model %s returned %d, trying next candidate...", model_name, resp.status_code)
                     continue
                 else:
                     logger.warning("Gemini API call returned status %d: %s", resp.status_code, resp.text[:200])
@@ -201,7 +204,7 @@ Crucial instructions:
 
     # 1. Try Google Gemini first
     if settings.GEMINI_API_KEY:
-        gemini_response = await _call_gemini(SYSTEM_PROMPT_REPORT, user_message, max_tokens=650)
+        gemini_response = await _call_gemini(SYSTEM_PROMPT_REPORT, user_message, max_tokens=2500)
         if gemini_response:
             return gemini_response
 
@@ -217,7 +220,7 @@ Crucial instructions:
                     {"role": "user", "content": user_message},
                 ],
                 temperature=0.7,
-                max_tokens=650,
+                max_tokens=2500,
             )
             return response.choices[0].message.content or ""
         except Exception as exc:
@@ -232,26 +235,63 @@ Crucial instructions:
 async def chat(
     message: str,
     context: dict | None = None,
+    history: list[dict] | None = None,
 ) -> str:
-    """Handle chat messages with optional data context via Gemini or OpenAI."""
+    """Handle chat messages with rich location context and history via Gemini or OpenAI."""
     context = context or {}
 
     context_parts = []
+    if context.get("label"):
+        context_parts.append(f"Selected Micro-Location: {context['label']}")
     if context.get("city"):
         context_parts.append(f"City: {context['city']}")
+    if context.get("suburb"):
+        context_parts.append(f"Neighborhood/Suburb: {context['suburb']}")
     if context.get("concept_id"):
-        context_parts.append(f"Current concept: {context['concept_id']}")
-    if context.get("cell_id"):
-        context_parts.append(f"Current cell: {context['cell_id']}")
+        context_parts.append(f"Current Category/Concept: {context['concept_id']}")
+    if context.get("demand") is not None:
+        context_parts.append(f"Demand Score: {context['demand']}")
+    if context.get("supply") is not None:
+        context_parts.append(f"Supply Saturation: {context['supply']}")
+    if context.get("gap") is not None:
+        context_parts.append(f"Opportunity Gap Score: {context['gap']}")
+    if context.get("landmarks"):
+        lms = context['landmarks'] if isinstance(context['landmarks'], list) else [str(context['landmarks'])]
+        context_parts.append(f"Nearby Landmarks & Corridors: {', '.join(lms)}")
+    if context.get("venues"):
+        v_list = []
+        for v in context['venues'][:8]:
+            if isinstance(v, dict):
+                dist = f" ({v.get('distance_km')} km away)" if v.get('distance_km') else ""
+                v_list.append(f"{v.get('name', 'Local venue')}{dist}")
+            elif isinstance(v, str):
+                v_list.append(v)
+        if v_list:
+            context_parts.append(f"Nearby Venues: {', '.join(v_list)}")
+    if context.get("taste_tags"):
+        tags = context['taste_tags'] if isinstance(context['taste_tags'], list) else [str(context['taste_tags'])]
+        context_parts.append(f"Local Taste Signals: {', '.join(tags)}")
     if context.get("data"):
-        context_parts.append(f"Data context:\n{context['data']}")
+        context_parts.append(f"Additional Context:\n{context['data']}")
 
-    context_text = "\n".join(context_parts) if context_parts else "No specific context."
-    user_message = f"Context:\n{context_text}\n\nUser question: {message}"
+    context_text = "\n".join(context_parts) if context_parts else "Location: Urban Commercial Area."
+
+    # Build conversation history
+    history_text = ""
+    if history:
+        recent = history[-4:]
+        hist_lines = []
+        for h in recent:
+            role = "User" if h.get("role") == "user" else "Assistant"
+            hist_lines.append(f"{role}: {h.get('content', '')}")
+        if hist_lines:
+            history_text = "\n\nRecent Conversation:\n" + "\n".join(hist_lines)
+
+    user_message = f"Area Context:\n{context_text}{history_text}\n\nUser Question: {message}"
 
     # 1. Try Google Gemini
     if settings.GEMINI_API_KEY:
-        gemini_response = await _call_gemini(SYSTEM_PROMPT_CHAT, user_message, max_tokens=500)
+        gemini_response = await _call_gemini(SYSTEM_PROMPT_CHAT, user_message, max_tokens=1500)
         if gemini_response:
             return gemini_response
 
@@ -267,7 +307,7 @@ async def chat(
                     {"role": "user", "content": user_message},
                 ],
                 temperature=0.7,
-                max_tokens=500,
+                max_tokens=1500,
             )
             return response.choices[0].message.content or ""
         except Exception as exc:
