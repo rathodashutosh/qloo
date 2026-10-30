@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { Copy, Check, FileText, Sparkles, TrendingUp } from 'lucide-react';
+import { Copy, Check, FileText, Sparkles, TrendingUp, Download } from 'lucide-react';
 
 /**
  * ReportPanel — renders an LLM-generated brief with structured data and Markdown.
@@ -12,8 +12,6 @@ export default function ReportPanel({ report }) {
 
   const text = report.report_text || report.report || report.text || report.summary || '';
   const structured = report.structured_data || {};
-  const tags = structured.taste_tags || report.taste_tags || report.tags || [];
-  const venues = structured.venues || report.venues || [];
 
   const handleCopy = async () => {
     try {
@@ -32,6 +30,18 @@ export default function ReportPanel({ report }) {
     }
   };
 
+  const handleDownload = () => {
+    const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Opportunity_Brief_${Date.now()}.md`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="rounded-xl border border-indigo-200 bg-white shadow-sm overflow-hidden mt-3">
       {/* Report Header */}
@@ -40,22 +50,32 @@ export default function ReportPanel({ report }) {
           <Sparkles className="h-4 w-4 text-indigo-600 animate-pulse" />
           AI Opportunity Brief
         </div>
-        <button
-          onClick={handleCopy}
-          className="flex items-center gap-1 px-2 py-1 rounded bg-white text-[11px] text-indigo-600 hover:text-indigo-800 border border-indigo-200 shadow-2xs font-medium transition-colors cursor-pointer"
-        >
-          {copied ? (
-            <>
-              <Check className="h-3 w-3 text-emerald-600" />
-              <span className="text-emerald-700">Copied!</span>
-            </>
-          ) : (
-            <>
-              <Copy className="h-3 w-3" />
-              Copy
-            </>
-          )}
-        </button>
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={handleDownload}
+            title="Download brief as Markdown file"
+            className="flex items-center gap-1 px-2 py-1 rounded bg-white text-[11px] text-slate-600 hover:text-slate-900 border border-slate-200 shadow-2xs font-medium transition-colors cursor-pointer"
+          >
+            <Download className="h-3 w-3" />
+            <span className="hidden sm:inline">Export</span>
+          </button>
+          <button
+            onClick={handleCopy}
+            className="flex items-center gap-1 px-2 py-1 rounded bg-white text-[11px] text-indigo-600 hover:text-indigo-800 border border-indigo-200 shadow-2xs font-medium transition-colors cursor-pointer"
+          >
+            {copied ? (
+              <>
+                <Check className="h-3 w-3 text-emerald-600" />
+                <span className="text-emerald-700">Copied!</span>
+              </>
+            ) : (
+              <>
+                <Copy className="h-3 w-3" />
+                Copy
+              </>
+            )}
+          </button>
+        </div>
       </div>
 
       {/* Narrative Body */}

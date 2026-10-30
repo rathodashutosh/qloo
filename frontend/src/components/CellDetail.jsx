@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { gapToColor, gapLabel, confidenceColor } from '../utils/colors';
 import { generateReport } from '../api/client';
 import LoadingSpinner, { SkeletonCard } from './LoadingSpinner';
 import ReportPanel from './ReportPanel';
-import { MapPin, BarChart3, Tag, Store, FileText, X } from 'lucide-react';
+import { MapPin, BarChart3, Tag, Store, FileText, X, Search } from 'lucide-react';
 
 /**
  * CellDetail — side panel showing demand/supply bars, tags, venues, and report.
@@ -12,6 +12,23 @@ export default function CellDetail({ cell, conceptId, city, loading, onClose }) 
   const [report, setReport] = useState(null);
   const [reportLoading, setReportLoading] = useState(false);
   const [reportError, setReportError] = useState(null);
+  const [venueSearch, setVenueSearch] = useState('');
+
+  const gap = cell?.gap ?? cell?.gap_score ?? 0;
+  const demand = cell?.demand ?? 0;
+  const supply = cell?.supply ?? 0;
+  const confidence = cell?.confidence || 'medium';
+  const tags = cell?.tags || cell?.taste_tags || [];
+  const venues = cell?.venues || cell?.nearby_venues || [];
+
+  const filteredVenues = useMemo(() => {
+    if (!venueSearch.trim()) return venues;
+    const q = venueSearch.toLowerCase();
+    return venues.filter((v) => {
+      const name = typeof v === 'string' ? v : v?.name || '';
+      return name.toLowerCase().includes(q);
+    });
+  }, [venues, venueSearch]);
 
   if (loading) {
     return (
@@ -22,13 +39,6 @@ export default function CellDetail({ cell, conceptId, city, loading, onClose }) 
   }
 
   if (!cell) return null;
-
-  const gap = cell.gap ?? cell.gap_score ?? 0;
-  const demand = cell.demand ?? 0;
-  const supply = cell.supply ?? 0;
-  const confidence = cell.confidence || 'medium';
-  const tags = cell.tags || cell.taste_tags || [];
-  const venues = cell.venues || cell.nearby_venues || [];
 
   const handleGenerateReport = async () => {
     setReportLoading(true);
@@ -116,25 +126,60 @@ export default function CellDetail({ cell, conceptId, city, loading, onClose }) 
       {/* Nearby Venues */}
       {venues.length > 0 && (
         <div className="space-y-1.5">
-          <div className="flex items-center gap-2 text-xs">
-            <Store className="h-3.5 w-3.5 text-slate-400" />
-            <span className="font-medium text-slate-600">Nearby Venues ({venues.length})</span>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5 text-xs">
+              <Store className="h-3.5 w-3.5 text-slate-400" />
+              <span className="font-semibold text-slate-600">Nearby Venues ({venues.length})</span>
+            </div>
+            {venues.length > 5 && (
+              <span className="text-[10px] text-slate-400">
+                {filteredVenues.length} shown
+              </span>
+            )}
           </div>
+
+          {/* Quick Search */}
+          {venues.length > 5 && (
+            <div className="flex items-center gap-1 px-2 py-1 bg-slate-50 border border-slate-200 rounded-md">
+              <Search className="h-3 w-3 text-slate-400 shrink-0" />
+              <input
+                type="text"
+                value={venueSearch}
+                onChange={(e) => setVenueSearch(e.target.value)}
+                placeholder="Filter venues..."
+                className="w-full text-[11px] bg-transparent outline-none text-slate-700 placeholder-slate-400"
+              />
+              {venueSearch && (
+                <button onClick={() => setVenueSearch('')} className="text-slate-400 hover:text-slate-600">
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </div>
+          )}
+
           <ul className="space-y-1 max-h-36 overflow-y-auto pr-1">
-            {venues.map((venue, i) => (
-              <li
-                key={i}
-                className="text-xs text-slate-600 flex items-center justify-between gap-1.5 py-1 px-2 rounded bg-slate-50"
-              >
-                <div className="flex items-center gap-1.5 truncate">
-                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 flex-shrink-0" />
-                  <span className="truncate">{typeof venue === 'string' ? venue : venue.name || 'Unknown venue'}</span>
-                </div>
-                {typeof venue === 'object' && venue.distance_km !== undefined && venue.distance_km !== null && (
-                  <span className="text-[10px] text-slate-400 font-mono shrink-0">{venue.distance_km} km</span>
-                )}
+            {filteredVenues.length === 0 ? (
+              <li className="text-[11px] text-slate-400 italic text-center py-2">
+                No matching venues found
               </li>
-            ))}
+            ) : (
+              filteredVenues.map((venue, i) => (
+                <li
+                  key={i}
+                  className="text-xs text-slate-600 flex items-center justify-between gap-1.5 py-1 px-2 rounded bg-slate-50 hover:bg-slate-100 transition-colors"
+                >
+                  <div className="flex items-center gap-1.5 truncate">
+                    <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 flex-shrink-0" />
+                    <span className="truncate">{typeof venue === 'string' ? venue : venue.name || 'Unknown venue'}</span>
+                  </div>
+                  {typeof venue === 'object' && venue.distance_km !== undefined && venue.distance_km !== null && (
+                    <span className="text-[10px] text-slate-500 bg-white border border-slate-200 px-1.5 py-0.2 rounded font-mono shrink-0">
+                      {venue.distance_km} km
+                    </span>
+                  )}
+                </li>
+              ))
+            )}
           </ul>
         </div>
       )}

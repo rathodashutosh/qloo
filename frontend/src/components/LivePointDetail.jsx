@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { gapToColor, gapLabel, confidenceColor } from '../utils/colors';
 import { generateReport } from '../api/client';
 import LoadingSpinner from './LoadingSpinner';
 import ReportPanel from './ReportPanel';
-import { MapPin, Target, BarChart3, Tag, Store, FileText, X, Sparkles, Key } from 'lucide-react';
+import { MapPin, Target, BarChart3, Tag, Store, FileText, X, Sparkles, Key, Search } from 'lucide-react';
 
 export default function LivePointDetail({
   data,
@@ -17,6 +17,20 @@ export default function LivePointDetail({
   const [report, setReport] = useState(null);
   const [reportLoading, setReportLoading] = useState(false);
   const [reportError, setReportError] = useState(null);
+  const [venueSearch, setVenueSearch] = useState('');
+
+  const gap = data?.gap ?? 0;
+  const demand = data?.demand ?? 0;
+  const supply = data?.supply ?? 0;
+  const confidence = data?.confidence || 'medium';
+  const tags = data?.taste_tags || [];
+  const venues = data?.venues || [];
+
+  const filteredVenues = useMemo(() => {
+    if (!venueSearch.trim()) return venues;
+    const q = venueSearch.toLowerCase();
+    return venues.filter((v) => (v.name || '').toLowerCase().includes(q));
+  }, [venues, venueSearch]);
 
   if (loading) {
     return (
@@ -34,13 +48,6 @@ export default function LivePointDetail({
   }
 
   if (!data) return null;
-
-  const gap = data.gap ?? 0;
-  const demand = data.demand ?? 0;
-  const supply = data.supply ?? 0;
-  const confidence = data.confidence || 'medium';
-  const tags = data.taste_tags || [];
-  const venues = data.venues || [];
 
   const handleGenerateReport = async () => {
     setReportLoading(true);
@@ -173,27 +180,60 @@ export default function LivePointDetail({
       {/* Nearby Venues */}
       {venues.length > 0 && (
         <div className="space-y-1.5 pt-1">
-          <span className="text-[11px] font-semibold text-slate-600 flex items-center gap-1">
-            <Store className="h-3 w-3 text-slate-400" />
-            Detected Competitor Venues ({venues.length})
-          </span>
-          <ul className="space-y-1 max-h-36 overflow-y-auto pr-1 sidebar-scroll">
-            {venues.map((v, i) => (
-              <li
-                key={i}
-                className="text-[11px] text-slate-700 py-1 px-2 rounded bg-slate-50 flex items-center justify-between gap-1.5"
-              >
-                <div className="flex items-center gap-1.5 truncate">
-                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" />
-                  <span className="truncate font-medium">{v.name || 'Local Venue'}</span>
-                </div>
-                {v.distance_km !== undefined && v.distance_km !== null && (
-                  <span className="text-[10px] text-slate-400 font-mono shrink-0">
-                    {v.distance_km} km
-                  </span>
-                )}
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-semibold text-slate-600 flex items-center gap-1">
+              <Store className="h-3 w-3 text-slate-400" />
+              Detected Competitor Venues ({venues.length})
+            </span>
+            {venues.length > 5 && (
+              <span className="text-[10px] text-slate-400">
+                {filteredVenues.length} shown
+              </span>
+            )}
+          </div>
+
+          {/* Quick Search for Venues */}
+          {venues.length > 5 && (
+            <div className="flex items-center gap-1 px-2 py-1 bg-slate-50 border border-slate-200 rounded-md">
+              <Search className="h-3 w-3 text-slate-400 shrink-0" />
+              <input
+                type="text"
+                value={venueSearch}
+                onChange={(e) => setVenueSearch(e.target.value)}
+                placeholder="Filter competitor venues..."
+                className="w-full text-[11px] bg-transparent outline-none text-slate-700 placeholder-slate-400"
+              />
+              {venueSearch && (
+                <button onClick={() => setVenueSearch('')} className="text-slate-400 hover:text-slate-600">
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </div>
+          )}
+
+          <ul className="space-y-1 max-h-40 overflow-y-auto pr-1 sidebar-scroll">
+            {filteredVenues.length === 0 ? (
+              <li className="text-[11px] text-slate-400 italic text-center py-2">
+                No matching venues found
               </li>
-            ))}
+            ) : (
+              filteredVenues.map((v, i) => (
+                <li
+                  key={i}
+                  className="text-[11px] text-slate-700 py-1 px-2 rounded bg-slate-50 flex items-center justify-between gap-1.5 hover:bg-slate-100 transition-colors"
+                >
+                  <div className="flex items-center gap-1.5 truncate">
+                    <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" />
+                    <span className="truncate font-medium">{v.name || 'Local Venue'}</span>
+                  </div>
+                  {v.distance_km !== undefined && v.distance_km !== null && (
+                    <span className="text-[10px] text-slate-500 bg-white border border-slate-200 px-1.5 py-0.2 rounded font-mono shrink-0">
+                      {v.distance_km} km
+                    </span>
+                  )}
+                </li>
+              ))
+            )}
           </ul>
         </div>
       )}

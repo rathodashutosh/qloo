@@ -24,7 +24,9 @@ import {
   TrendingUp,
   Target,
   RefreshCw,
-  Satellite
+  Satellite,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from 'lucide-react';
 
 export default function App() {
@@ -33,6 +35,7 @@ export default function App() {
   const [compareMode, setCompareMode] = useState(false);
   const [selectedCell, setSelectedCell] = useState(null);
   const [compareCell, setCompareCell] = useState(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   // Live Point Query State
   const [liveMode, setLiveMode] = useState(true);
@@ -178,6 +181,31 @@ export default function App() {
             )}
           </button>
 
+          {/* 60:40 Layout Indicator Badge */}
+          <div className="hidden xl:flex items-center gap-1.5 px-2.5 py-1 bg-slate-100 text-slate-700 rounded-lg text-xs font-semibold border border-slate-200">
+            <span className="w-2 h-2 rounded-full bg-indigo-600 animate-pulse" />
+            <span>60% Map : 40% Analytics</span>
+          </div>
+
+          {/* Toggle Sidebar Layout */}
+          <button
+            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+            title={sidebarCollapsed ? "Show Analytics Panel (40%)" : "Maximize Map to 100%"}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-slate-200 hover:border-indigo-300 hover:bg-slate-50 text-slate-700 transition-colors cursor-pointer"
+          >
+            {sidebarCollapsed ? (
+              <>
+                <PanelLeftOpen className="h-3.5 w-3.5 text-indigo-600" />
+                <span className="hidden sm:inline">Show Analytics (40%)</span>
+              </>
+            ) : (
+              <>
+                <PanelLeftClose className="h-3.5 w-3.5 text-slate-500" />
+                <span className="hidden sm:inline">Maximize Map</span>
+              </>
+            )}
+          </button>
+
           {/* Compare Mode Toggle */}
           <button
             onClick={() => {
@@ -197,10 +225,14 @@ export default function App() {
         </div>
       </header>
 
-      {/* Main Content: Sidebar + Map */}
+      {/* Main Content: Sidebar (40%) + Map (60%) */}
       <div className="flex flex-1 overflow-hidden relative">
-        {/* Left Sidebar */}
-        <aside className="w-96 bg-white border-r border-slate-200 flex flex-col shrink-0 z-10 shadow-sm overflow-hidden">
+        {/* Left Sidebar (40% width) */}
+        <aside
+          className={`${
+            sidebarCollapsed ? 'hidden' : 'w-[40%] min-w-[420px] max-w-[620px]'
+          } bg-white border-r border-slate-200 flex flex-col shrink-0 z-10 shadow-sm overflow-hidden transition-all duration-200`}
+        >
           <div className="p-4 space-y-4 overflow-y-auto flex-1 sidebar-scroll">
             {/* City Selection */}
             <CityPicker
@@ -316,7 +348,7 @@ export default function App() {
           </div>
         </aside>
 
-        {/* Map Container */}
+        {/* Map Container (60% width) */}
         <main className="flex-1 relative overflow-hidden bg-slate-200">
           <GapMap
             city={selectedCity}
@@ -331,12 +363,60 @@ export default function App() {
             onBasemapChange={setCurrentBasemap}
           />
 
+          {/* Floating Button to Re-open Sidebar when collapsed */}
+          {sidebarCollapsed && (
+            <button
+              onClick={() => setSidebarCollapsed(false)}
+              className="absolute top-3 left-4 bg-white/95 backdrop-blur-md px-3.5 py-2 rounded-xl shadow-md border border-slate-200 text-xs text-slate-800 font-semibold flex items-center gap-2 hover:bg-white transition-all cursor-pointer z-20"
+            >
+              <PanelLeftOpen className="h-4 w-4 text-indigo-600" />
+              <span>Show Analytics (40%)</span>
+            </button>
+          )}
+
           {/* Floating Instructions Pill */}
-          <div className="absolute top-3 left-4 bg-white/95 backdrop-blur-md px-3.5 py-2 rounded-full shadow-md border border-slate-200 text-xs text-slate-700 flex items-center gap-2 pointer-events-none z-10">
+          <div className={`absolute top-3 ${sidebarCollapsed ? 'left-48' : 'left-4'} bg-white/95 backdrop-blur-md px-3.5 py-2 rounded-full shadow-md border border-slate-200 text-xs text-slate-700 flex items-center gap-2 pointer-events-none z-10 transition-all`}>
             <span className="w-2.5 h-2.5 rounded-full bg-pink-500 animate-ping inline-block" />
-            <span className="font-semibold text-slate-800">Live Map Active</span>
+            <span className="font-semibold text-slate-800">Live Spatial Grid</span>
             <span className="text-slate-400">|</span>
             <span className="text-slate-600">Click any hex or point to query Qloo</span>
+          </div>
+
+          {/* Floating Basemap Quick-Switcher */}
+          <div className="absolute top-3 right-16 bg-white/95 backdrop-blur-md p-1 rounded-xl shadow-md border border-slate-200 hidden md:flex items-center gap-1 z-10 text-xs">
+            <button
+              onClick={() => setCurrentBasemap('esriStreet')}
+              title="Cartographic Street Network"
+              className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+                currentBasemap === 'esriStreet'
+                  ? 'bg-indigo-600 text-white shadow-2xs'
+                  : 'text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              🗺️ Streets
+            </button>
+            <button
+              onClick={() => setCurrentBasemap('geeSentinel1')}
+              title="Copernicus Sentinel-1 SAR Radar"
+              className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+                currentBasemap === 'geeSentinel1'
+                  ? 'bg-indigo-600 text-white shadow-2xs'
+                  : 'text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              🛰️ Sentinel-1
+            </button>
+            <button
+              onClick={() => setCurrentBasemap('geeViirs')}
+              title="VIIRS Nocturnal Luminosity / Night Lights"
+              className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+                currentBasemap === 'geeViirs'
+                  ? 'bg-indigo-600 text-white shadow-2xs'
+                  : 'text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              🌃 Night Lights
+            </button>
           </div>
 
           {/* Floating Map Legend (bottom-right) */}

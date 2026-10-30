@@ -1,7 +1,14 @@
 import { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { sendChatMessage } from '../api/client';
-import { Send, MessageCircle, Bot, User, Sparkles } from 'lucide-react';
+import { Send, MessageCircle, Bot, User, Sparkles, RotateCcw } from 'lucide-react';
+
+const SUGGESTED_PROMPTS = [
+  'What about opening a Chinese restaurant here?',
+  'Who are the daily students and commuters here?',
+  'What pricing and menu strategy fits this street?',
+  'Delivery vs dine-in potential for this corridor?',
+];
 
 /**
  * ChatBox — interactive location intelligence chat assistant for follow-up questions.
@@ -19,8 +26,8 @@ export default function ChatBox({ cellId, conceptId, city, selectedCell, livePoi
     }
   }, [messages, isTyping]);
 
-  const handleSend = async () => {
-    const text = input.trim();
+  const handleSend = async (textOverride) => {
+    const text = (typeof textOverride === 'string' ? textOverride : input).trim();
     if (!text || isTyping) return;
 
     const userMessage = { role: 'user', content: text };
@@ -81,33 +88,50 @@ export default function ChatBox({ cellId, conceptId, city, selectedCell, livePoi
   };
 
   return (
-    <div className="flex flex-col h-full max-h-[340px]">
+    <div className="flex flex-col h-full max-h-[360px]">
       <div className="flex items-center justify-between text-xs font-semibold text-slate-600 uppercase tracking-wider mb-2">
         <span className="flex items-center gap-1.5">
           <MessageCircle className="h-3.5 w-3.5 text-indigo-600" />
           Location Intelligence Chat
         </span>
-        <span className="text-[10px] text-indigo-600 lowercase bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 rounded font-normal">
-          Gemini AI
-        </span>
+        <div className="flex items-center gap-2">
+          {messages.length > 0 && (
+            <button
+              onClick={() => setMessages([])}
+              title="Clear conversation"
+              className="text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+            >
+              <RotateCcw className="h-3 w-3" />
+            </button>
+          )}
+          <span className="text-[10px] text-indigo-600 lowercase bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 rounded font-normal">
+            Gemini AI
+          </span>
+        </div>
       </div>
 
       {/* Messages Scroll Area */}
       <div
         ref={scrollRef}
-        className="flex-1 overflow-y-auto space-y-2.5 mb-2.5 chat-scroll min-h-[120px] max-h-[220px] pr-1"
+        className="flex-1 overflow-y-auto space-y-2.5 mb-2 chat-scroll min-h-[110px] max-h-[220px] pr-1"
       >
         {messages.length === 0 && (
-          <div className="text-[11px] text-slate-500 bg-slate-50 border border-slate-100 rounded-lg p-2.5 leading-relaxed">
-            <p className="font-semibold text-slate-700 mb-1 flex items-center gap-1">
+          <div className="text-[11px] text-slate-500 bg-slate-50 border border-slate-100 rounded-lg p-2.5 leading-relaxed space-y-1.5">
+            <p className="font-semibold text-slate-700 flex items-center gap-1">
               <Sparkles className="h-3 w-3 text-amber-500" />
-              Ask follow-up questions about this area:
+              Suggested 1-click questions:
             </p>
-            <ul className="space-y-0.5 text-slate-500 list-disc list-inside">
-              <li>&ldquo;What about opening a Chinese restaurant or bakery here?&rdquo;</li>
-              <li>&ldquo;Who are the daily commuters and students in this corridor?&rdquo;</li>
-              <li>&ldquo;What pricing strategy fits this neighborhood?&rdquo;</li>
-            </ul>
+            <div className="flex flex-wrap gap-1">
+              {SUGGESTED_PROMPTS.map((prompt, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => handleSend(prompt)}
+                  className="text-[10px] text-left bg-white border border-slate-200 hover:border-indigo-400 hover:bg-indigo-50/50 text-slate-700 px-2 py-1 rounded-md transition-all cursor-pointer shadow-2xs"
+                >
+                  {prompt}
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
@@ -161,6 +185,22 @@ export default function ChatBox({ cellId, conceptId, city, selectedCell, livePoi
         )}
       </div>
 
+      {/* Suggested chips row when messages already exist */}
+      {messages.length > 0 && (
+        <div className="flex items-center gap-1 overflow-x-auto pb-1.5 scrollbar-none">
+          {SUGGESTED_PROMPTS.slice(0, 3).map((prompt, idx) => (
+            <button
+              key={idx}
+              onClick={() => handleSend(prompt)}
+              disabled={isTyping}
+              className="text-[10px] whitespace-nowrap bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 text-slate-600 px-2 py-0.5 rounded-full border border-slate-200 transition-colors cursor-pointer shrink-0 disabled:opacity-50"
+            >
+              {prompt.replace('?', '')}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Input Form */}
       <div className="flex items-center gap-1.5 border border-slate-200 rounded-lg bg-white px-2.5 py-1.5 focus-within:border-indigo-400 focus-within:ring-1 focus-within:ring-indigo-300 transition-all">
         <input
@@ -173,7 +213,7 @@ export default function ChatBox({ cellId, conceptId, city, selectedCell, livePoi
           className="flex-1 text-xs text-slate-700 placeholder-slate-400 outline-none bg-transparent py-0.5"
         />
         <button
-          onClick={handleSend}
+          onClick={() => handleSend()}
           disabled={!input.trim() || isTyping}
           className="p-1.5 rounded-md bg-indigo-600 text-white disabled:opacity-40 hover:bg-indigo-700 transition-colors cursor-pointer disabled:cursor-not-allowed shrink-0"
         >
