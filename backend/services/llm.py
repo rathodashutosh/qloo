@@ -174,24 +174,30 @@ async def generate_report(
     """Generate a narrative business brief using Gemini, OpenAI, or analytical brief generator."""
     venue_list_text = ""
     if venues:
-        venue_names = [v.get("name", "Unnamed") for v in venues[:12] if v.get("name")]
+        venue_names = [
+            f"{v.get('name', 'Unnamed')}" + (f" ({v.get('distance_km')} km away)" if v.get('distance_km') else "")
+            for v in venues[:12] if v.get("name")
+        ]
         venue_list_text = "\n".join(f"  - {n}" for n in venue_names)
     else:
         venue_list_text = "  (no direct competitor venues recorded)"
 
-    user_message = f"""## Area Analysis: {concept_name} in {cell_label}
+    user_message = f"""## Hyper-Local Area Analysis: {concept_name} in {cell_label}
 
-**Demand score**: {demand:.2f} (normalized 0-1 from Qloo taste data)
-**Supply score**: {supply:.2f} (normalized 0-1, from {venue_count} existing venues)
+**Demand score**: {demand:.2f} (from Qloo taste signals & demographic density)
+**Supply score**: {supply:.2f} (from {venue_count} detected competitor venues)
 **Gap score**: {gap:.2f} (Opportunity formula: Demand * (1 - Supply))
 **Data confidence**: {confidence}
 
-**Top taste tags in this area**: {', '.join(taste_tags) if taste_tags else 'N/A'}
+**Local Consumer Taste Signals**: {', '.join(taste_tags) if taste_tags else 'N/A'}
 
-**Existing competitor venues**:
+**Detected Nearby Competitor Venues**:
 {venue_list_text}
 
-Write a comprehensive business brief for opening a {concept_name} in {cell_label}."""
+Write a comprehensive, hyper-local business brief specifically for opening a {concept_name} in {cell_label}.
+Crucial instructions:
+- Focus on THIS SPECIFIC micro-corridor, referencing the actual local competitors and real daily demographic here (commuters, students, local residents, office workers) rather than speaking in generic city-wide generalities.
+- Include actionable positioning advice on pricing, operating hours, and menu curation tailored to this specific neighborhood."""
 
     # 1. Try Google Gemini first
     if settings.GEMINI_API_KEY:

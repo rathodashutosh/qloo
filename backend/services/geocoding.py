@@ -1,15 +1,14 @@
-"""Reverse geocoding service using OSM Nominatim and city bounding boxes with in-memory caching."""
+"""Reverse geocoding service using OSM Nominatim with hyper-local granularity and in-memory caching."""
 
 import httpx
 import logging
-from typing import Dict, Optional, Tuple
+from typing import Dict, Tuple
 
 logger = logging.getLogger(__name__)
 
 # Cache reverse geocode lookups
 _GEOCODE_CACHE: Dict[Tuple[float, float], Dict[str, str]] = {}
 
-# Known city centers fallback
 KNOWN_AREAS = [
     # Bengaluru
     (12.9784, 77.6408, "Indiranagar", "Bengaluru"),
@@ -27,6 +26,7 @@ KNOWN_AREAS = [
     (19.1363, 72.8277, "Andheri West / Lokhandwala", "Mumbai"),
     (18.9930, 72.8258, "Lower Parel", "Mumbai"),
     (19.0760, 72.8777, "BKC Bandra Kurla Complex", "Mumbai"),
+    (18.9880, 73.0930, "New Panvel / Taloja", "Navi Mumbai"),
     # Delhi NCR
     (28.6315, 77.2167, "Connaught Place", "Delhi NCR"),
     (28.5494, 77.2001, "Hauz Khas", "Delhi NCR"),
@@ -43,14 +43,11 @@ KNOWN_AREAS = [
 
 
 async def reverse_geocode(lat: float, lon: float) -> Dict[str, str]:
-    """Reverse geocode coordinates to get suburb, district, and city name.
-    First checks in-memory cache, then checks closest known hotspot, then queries OSM Nominatim.
-    """
-    cache_key = (round(lat, 3), round(lon, 3))
+    """Reverse geocode coordinates to get suburb, district, road, and city name with maximum precision."""
+    cache_key = (round(lat, 4), round(lon, 4))
     if cache_key in _GEOCODE_CACHE:
         return _GEOCODE_CACHE[cache_key]
 
-    # Query Nominatim
     try:
         url = "https://nominatim.openstreetmap.org/reverse"
         headers = {
@@ -60,35 +57,50 @@ async def reverse_geocode(lat: float, lon: float) -> Dict[str, str]:
             "lat": lat,
             "lon": lon,
             "format": "json",
-            "zoom": 14,
+            "zoom": 16,
             "addressdetails": 1,
         }
-        async with httpx.AsyncClient(timeout=3.5) as client:
+        async with httpx.AsyncClient(timeout=4.0) as client:
             resp = await client.get(url, headers=headers, params=params)
             if resp.status_code == 200:
                 addr = resp.json().get("address", {})
-                suburb = (
-                    addr.get("suburb")
-                    or addr.get("neighbourhood")
-                    or addr.get("residential")
-                    or addr.get("commercial")
-                    or addr.get("city_district")
-                    or addr.get("quarter")
-                    or addr.get("road")
-                    or "Local District"
-                )
+
+                neighbourhood = addr.get("neighbourhood") or addr.get("junction")
+                suburb = addr.get("suburb") or addr.get("quarter") or addr.get("village")
+                road = addr.get("road")
                 city = (
                     addr.get("city")
                     or addr.get("town")
                     or addr.get("municipality")
                     or addr.get("state_district")
-                    or addr.get("state")
-                    or "Metro"
+                    or addr.get("county")
+                    or "Metro Area"
                 )
+                state = addr.get("state") or ""
+
+                # Build a precise micro-location label
+                local_micro = neighbourhood or suburb or road or addr.get("county") or "Local District"
+                
+                parts = []
+                if neighbourhood:
+                    parts.append(neighbourhood)
+                elif suburb:
+                    parts.append(suburb)
+                elif road:
+                    parts.append(road)
+
+                if city and city not in parts:
+                    parts.append(city)
+
+                label = ", ".join(parts) if parts else f"{local_micro}, {city}"
+
                 result = {
-                    "suburb": suburb,
+                    "suburb": local_micro,
+                    "neighbourhood": neighbourhood or "",
+                    "road": road or "",
                     "city": city,
-                    "label": f"{suburb}, {city}",
+                    "state": state,
+                    "label": label,
                 }
                 _GEOCODE_CACHE[cache_key] = result
                 return result
@@ -98,7 +110,7 @@ async def reverse_geocode(lat: float, lon: float) -> Dict[str, str]:
     # Fallback to closest known area
     import math
     best_dist = float("inf")
-    best_match = ("Selected Zone", "Local Metro")
+    best_match = ("Local District", "Metro")
 
     for k_lat, k_lon, k_suburb, k_city in KNOWN_AREAS:
         d = math.hypot(lat - k_lat, lon - k_lon)
@@ -108,7 +120,10 @@ async def reverse_geocode(lat: float, lon: float) -> Dict[str, str]:
 
     result = {
         "suburb": best_match[0],
+        "neighbourhood": best_match[0],
+        "road": "",
         "city": best_match[1],
+        "state": "",
         "label": f"{best_match[0]}, {best_match[1]}",
     }
     _GEOCODE_CACHE[cache_key] = result

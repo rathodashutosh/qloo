@@ -36,10 +36,11 @@ async def live_query(req: LiveQueryRequest):
 
         venues = [
             Venue(
-                osm_id=v.get("osm_id", f"qloo/{i}"),
+                osm_id=v.get("osm_id", f"poi/{i}"),
                 name=v.get("name") or "Local Venue",
                 lat=v.get("lat", req.lat),
                 lon=v.get("lon", req.lon),
+                distance_km=v.get("distance_km"),
                 tags_json=json.dumps(v.get("tags", {})),
             )
             for i, v in enumerate(analysis["venues"])
@@ -49,6 +50,9 @@ async def live_query(req: LiveQueryRequest):
             lat=req.lat,
             lon=req.lon,
             concept_id=req.concept_id,
+            label=analysis.get("label"),
+            suburb=analysis.get("suburb"),
+            city=analysis.get("city"),
             demand=analysis["demand"],
             supply=analysis["supply"],
             gap=analysis["gap"],
@@ -57,6 +61,7 @@ async def live_query(req: LiveQueryRequest):
             qloo_result_count=len(analysis["venues"]),
             venues=venues[:30],
             taste_tags=analysis["taste_tags"][:15],
+            landmarks=analysis.get("landmarks", []),
         )
 
     except Exception as exc:

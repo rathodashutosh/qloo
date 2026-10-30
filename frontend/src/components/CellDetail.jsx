@@ -120,14 +120,19 @@ export default function CellDetail({ cell, conceptId, city, loading, onClose }) 
             <Store className="h-3.5 w-3.5 text-slate-400" />
             <span className="font-medium text-slate-600">Nearby Venues ({venues.length})</span>
           </div>
-          <ul className="space-y-1 max-h-32 overflow-y-auto pr-1">
+          <ul className="space-y-1 max-h-36 overflow-y-auto pr-1">
             {venues.map((venue, i) => (
               <li
                 key={i}
-                className="text-xs text-slate-600 flex items-center gap-1.5 py-1 px-2 rounded bg-slate-50"
+                className="text-xs text-slate-600 flex items-center justify-between gap-1.5 py-1 px-2 rounded bg-slate-50"
               >
-                <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 flex-shrink-0" />
-                {typeof venue === 'string' ? venue : venue.name || 'Unknown venue'}
+                <div className="flex items-center gap-1.5 truncate">
+                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 flex-shrink-0" />
+                  <span className="truncate">{typeof venue === 'string' ? venue : venue.name || 'Unknown venue'}</span>
+                </div>
+                {typeof venue === 'object' && venue.distance_km !== undefined && venue.distance_km !== null && (
+                  <span className="text-[10px] text-slate-400 font-mono shrink-0">{venue.distance_km} km</span>
+                )}
               </li>
             ))}
           </ul>

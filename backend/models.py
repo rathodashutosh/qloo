@@ -48,13 +48,14 @@ class Score(BaseModel):
 # ── Venue ────────────────────────────────────────────────────────────────────
 
 class Venue(BaseModel):
-    """A point-of-interest / venue from OSM."""
+    """A point-of-interest / venue from OSM or Qloo."""
     osm_id: str
     cell_id: Optional[str] = None
     concept_id: Optional[str] = None
     name: Optional[str] = None
     lat: float
     lon: float
+    distance_km: Optional[float] = None
     tags_json: Optional[str] = None
 
 
@@ -127,6 +128,9 @@ class LiveQueryResponse(BaseModel):
     lat: float
     lon: float
     concept_id: str
+    label: Optional[str] = None
+    suburb: Optional[str] = None
+    city: Optional[str] = None
     demand: Optional[float] = None
     supply: Optional[float] = None
     gap: Optional[float] = None
@@ -135,6 +139,7 @@ class LiveQueryResponse(BaseModel):
     qloo_result_count: int = 0
     venues: list[Venue] = []
     taste_tags: list[str] = []
+    landmarks: list[str] = []
 
 
 class ChatRequest(BaseModel):

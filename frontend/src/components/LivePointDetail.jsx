@@ -62,11 +62,11 @@ export default function LivePointDetail({
         <div className="space-y-0.5">
           <div className="flex items-center gap-1.5">
             <span className="w-2.5 h-2.5 rounded-full bg-pink-500 animate-ping inline-block" />
-            <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
-              Live Coordinate Analysis
+            <h3 className="text-xs font-bold text-slate-900 tracking-tight">
+              {data.label || 'Live Coordinate Analysis'}
             </h3>
           </div>
-          <p className="text-[11px] text-slate-500 font-mono">
+          <p className="text-[10px] text-slate-500 font-mono">
             {data.lat.toFixed(5)}, {data.lon.toFixed(5)}
           </p>
         </div>
@@ -77,6 +77,23 @@ export default function LivePointDetail({
           <X className="h-4 w-4" />
         </button>
       </div>
+
+      {/* Landmarks if available */}
+      {data.landmarks && data.landmarks.length > 0 && (
+        <div className="bg-slate-50 border border-slate-100 rounded-lg p-2.5 space-y-1">
+          <span className="text-[10px] font-semibold text-slate-600 uppercase tracking-wider flex items-center gap-1">
+            <MapPin className="h-3 w-3 text-rose-500" />
+            Nearby Corridors & Landmarks
+          </span>
+          <div className="flex flex-wrap gap-1">
+            {data.landmarks.map((lm, i) => (
+              <span key={i} className="px-1.5 py-0.5 bg-white border border-slate-200 text-slate-700 rounded text-[10px]">
+                {lm}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       {!hasQlooKey && (
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-2.5 text-[11px] text-amber-800 flex items-center justify-between">
@@ -160,14 +177,21 @@ export default function LivePointDetail({
             <Store className="h-3 w-3 text-slate-400" />
             Detected Competitor Venues ({venues.length})
           </span>
-          <ul className="space-y-1 max-h-28 overflow-y-auto pr-1 sidebar-scroll">
+          <ul className="space-y-1 max-h-36 overflow-y-auto pr-1 sidebar-scroll">
             {venues.map((v, i) => (
               <li
                 key={i}
-                className="text-[11px] text-slate-700 py-1 px-2 rounded bg-slate-50 flex items-center gap-1.5"
+                className="text-[11px] text-slate-700 py-1 px-2 rounded bg-slate-50 flex items-center justify-between gap-1.5"
               >
-                <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" />
-                <span className="truncate">{v.name || 'Local Venue'}</span>
+                <div className="flex items-center gap-1.5 truncate">
+                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" />
+                  <span className="truncate font-medium">{v.name || 'Local Venue'}</span>
+                </div>
+                {v.distance_km !== undefined && v.distance_km !== null && (
+                  <span className="text-[10px] text-slate-400 font-mono shrink-0">
+                    {v.distance_km} km
+                  </span>
+                )}
               </li>
             ))}
           </ul>

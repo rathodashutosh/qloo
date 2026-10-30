@@ -61,6 +61,7 @@ async def get_cell_detail(
                 name=v.get("name") or "Local Venue",
                 lat=v.get("lat", lat),
                 lon=v.get("lon", lon),
+                distance_km=v.get("distance_km"),
                 tags_json=json.dumps(v.get("tags", {})),
             )
             for idx, v in enumerate(raw_venues)
