@@ -55,6 +55,7 @@ class Venue(BaseModel):
     name: Optional[str] = None
     lat: float
     lon: float
+    distance_km: Optional[float] = None
     tags_json: Optional[str] = None
 
 
@@ -124,6 +125,9 @@ class LiveQueryResponse(BaseModel):
     lat: float
     lon: float
     concept_id: str
+    label: Optional[str] = None
+    suburb: Optional[str] = None
+    city: Optional[str] = None
     demand: Optional[float] = None
     supply: Optional[float] = None
     gap: Optional[float] = None
@@ -132,6 +136,7 @@ class LiveQueryResponse(BaseModel):
     qloo_result_count: int = 0
     venues: list[Venue] = []
     taste_tags: list[str] = []
+    landmarks: list[str] = []
 
 
 class ChatRequest(BaseModel):
